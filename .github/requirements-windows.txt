@@ -1,0 +1,35 @@
+# Hash-pinned build dependencies for the Windows installer.
+#
+# Generated, not hand-written:
+#   pip download pyinstaller==6.11.1 --platform win_amd64 --python-version 312 \
+#       --only-binary=:all: --dest <tmp>
+#   pip download pefile pywin32-ctypes --platform win_amd64 ... --no-deps
+#   sha256 each wheel
+#
+# WHY the second command exists: `pip --platform` selects wheel-compatibility
+# TAGS but does not change environment-marker evaluation, so PyInstaller's
+# Windows-only dependencies -- gated on sys_platform == 'win32' -- are silently
+# dropped when resolving from Linux. Installing this file with --require-hashes on
+# the runner would then fail on unhashed packages. They are pinned explicitly.
+#
+# Consumed by build-installer.yml as:
+#   pip install --require-hashes -r .github/requirements-windows.txt
+# --require-hashes makes EVERY requirement mandatory-pinned, so adding a package
+# without a hash fails the build rather than silently widening the trust boundary.
+#
+# To refresh: re-run the commands above and replace this file wholesale.
+
+altgraph==0.17.5 \
+    --hash=sha256:f3a22400bce1b0c701683820ac4f3b159cd301acab067c51c653e06961600597
+packaging==26.3 \
+    --hash=sha256:d7193f7c8e4e93f444fde0262bf90af30e16fa0ad0ad44cb553c87339b23cd1c
+pefile==2024.8.26 \
+    --hash=sha256:76f8b485dcd3b1bb8166f1128d395fa3d87af26360c2358fb75b80019b957c6f
+pyinstaller==6.11.1 \
+    --hash=sha256:7ac83c0dc0e04357dab98c487e74ad2adb30e7eb186b58157a8faf46f1fa796f
+pyinstaller-hooks-contrib==2026.6 \
+    --hash=sha256:fd13b8ac126b35361175edacd41a0d97080b75dd5f4b594ecefefff969509dd3
+pywin32-ctypes==0.2.3 \
+    --hash=sha256:8a1513379d709975552d202d942d9837758905c8d01eb82b8bcc30918929e7b8
+setuptools==83.0.0 \
+    --hash=sha256:29b23c360f22f414dc7336bb39178cc7bcbf6021ed2733cde173f09dba19abb3

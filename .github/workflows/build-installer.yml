@@ -1,0 +1,101 @@
+# Builds the Windows installer .exe.
+#
+# PyInstaller cannot cross-compile, and this project is developed on Linux, so the
+# binary is built on a real windows-latest runner rather than under wine. `mods/`
+# is bundled into the exe and unpacked to sys._MEIPASS at run time; tools/install.py
+# reads it from there.
+#
+# Security notes, since this workflow is deliberately locked down:
+#   * `permissions` is read-only by default and raised to `contents: write` only in
+#     the release job, which runs only for a tag.
+#   * The release upload uses the built-in GITHUB_TOKEN via `gh` rather than a
+#     third-party action, so no external action can see the token.
+#   * Build dependencies are hash-pinned in .github/requirements-windows.txt and
+#     installed with --require-hashes, so the pip side is pinned as tightly as the
+#     actions side.
+#   * Every action is pinned to a full commit SHA, not a tag. A tag like `v4` is a
+#     MUTABLE pointer that its maintainers move as they release; a compromised
+#     action repo can retarget it and your next run executes attacker code with the
+#     release job's contents:write token. That is how the tj-actions/changed-files
+#     compromise leaked secrets in March 2025. A SHA cannot be moved. The trailing
+#     comment records which release each SHA was, so Dependabot can bump both.
+name: build-installer
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
+        with:
+          python-version: '3.12'
+
+      # --require-hashes: every package must be pinned by version AND sha256, so a
+      # compromised PyPI release of the exact pinned version cannot get in either.
+      # Adding a dependency without a hash fails the build rather than quietly
+      # widening what this workflow trusts.
+      - name: Install PyInstaller
+        run: pip install --require-hashes -r .github/requirements-windows.txt
+
+      # --paths and --hidden-import are both needed: install.py imports patch_bsf
+      # after mutating sys.path at run time, which PyInstaller's static analysis
+      # cannot follow, so the modules must be named explicitly or the exe builds
+      # fine and fails on first launch with ModuleNotFoundError.
+      - name: Build
+        run: >
+          pyinstaller --onefile --console
+          --name BSF-Legacy-Installer
+          --add-data "mods;mods"
+          --paths tools
+          --hidden-import patch_bsf
+          --hidden-import hwvp
+          --hidden-import cursorfix
+          --hidden-import gm7
+          tools/install.py
+
+      # Smoke test: the exe must start, find no game, and say so. Catches a
+      # missing hidden import, which is otherwise invisible until a user runs it.
+      - name: Smoke test
+        run: |
+          $out = & ".\dist\BSF-Legacy-Installer.exe" 2>&1 | Out-String
+          Write-Host $out
+          if ($out -notmatch 'Could not find BattleshipsForever.exe') {
+            Write-Error "installer did not produce the expected not-found message"
+            exit 1
+          }
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        with:
+          name: BSF-Legacy-Installer
+          path: dist/BSF-Legacy-Installer.exe
+          if-no-files-found: error
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4.3.0
+        with:
+          name: BSF-Legacy-Installer
+          path: dist
+      - name: Attach to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" --draft --title "${GITHUB_REF_NAME}" \
+            --notes "Windows installer. Requires your own copy of Battleships Forever v0.90d." \
+            || true
+          gh release upload "${GITHUB_REF_NAME}" dist/BSF-Legacy-Installer.exe --clobber

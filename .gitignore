@@ -1,0 +1,72 @@
+# ---------------------------------------------------------------------------
+# The private side folder. Everything under it stays local: material extracted
+# from the game, files derived from its source, and the reverse-engineering and
+# decompilation notes.
+#
+# This is the single most important line in the repo. The .githooks/pre-commit
+# hook refuses any staged path under _local/ as well, so a stray `git add -f`
+# cannot get past both.
+# ---------------------------------------------------------------------------
+/_local/
+
+# ---------------------------------------------------------------------------
+# Defence in depth: even outside _local/, never track the game, anything
+# extracted from it, or anything generated from its source.
+# ---------------------------------------------------------------------------
+
+# The game itself, in any form
+*.exe
+*.gmk
+*.gm6
+*.gb1
+*.dll
+battleshipsforeverv090d*/
+bsf-*/
+wineprefix/
+
+# Extracted / decompiled game data
+objects.json
+scripts.json
+dump/
+mem_ships/
+gallery/
+*.shp
+*.sb4
+
+# Files GENERATED from the game's own GML -- these are derivative works and must
+# be rebuilt by each user from their own copy, never redistributed.
+mods/crisp_widgets.gml
+mods/x3patch.gml
+mods/x3_*.gml
+mods/stepprof.gml
+mods/turretprof.gml
+mods/turret_step.gml
+mods/eturret_step.gml
+
+# Runtime state written by the mods next to themselves
+mods/*.on
+mods/*.log
+mods/*.txt
+mods/*.cfg
+mods/*.png
+mods/*.req
+
+# ...except the markers that decide which modules are ON. These are empty files
+# and they ARE the default configuration: without them a fresh clone installs
+# every module and enables none of them. battle.on is deliberately absent -- it
+# is a scripted stress battle for measurement, not something a player wants.
+!mods/cursor.on
+!mods/crisp.on
+!mods/logo.on
+!mods/legacy.on
+
+# Build + scratch
+tmp/
+build/
+toolchain/
+__pycache__/
+*.pyc
+
+# Local-only notes and per-machine git hooks
+/CLAUDE.md
+/.githooks/

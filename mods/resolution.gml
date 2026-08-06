@@ -1,0 +1,153 @@
+// Battleships Forever -- in-game resolution picker.
+//
+// Ships as a plain text mod: the exe is never patched for resolution. That
+// matters because a patched-in resolution has to be chosen by whoever builds the
+// patch, and they do not know the player's monitor.
+//
+// -------------------------------------------------------------------- how
+// GM 7.0 builds the drawing region (the real backbuffer) when a room loads,
+// from THAT room's authored view port. Nothing at runtime resizes an existing
+// region -- window_set_region_size reports a new size while the backbuffer stays
+// put, and view_wport is only a zoom inside the buffer that already exists.
+//
+// But `room_set_view` rewrites a room's authored port, it works on rooms that
+// are not loaded, and the next load of that room builds the region at the new
+// size. So: rewrite all 25 rooms, then room_restart(). Verified from 1280x720 up
+// to 3840x2160 and back down, live, with no game restart -- screen_save returns
+// the requested size and draw_line still measures 1 device pixel, which is what
+// separates a native render from an upscale.
+//
+// ------------------------------------------------------------- aspect policy
+// Every room authors view[0] as 1024x768 and several rooms are exactly 768 tall,
+// so vertical is the binding constraint: view height stays 768 and the width
+// opens up to the display aspect (1365x768 at 16:9). Battle rooms are 2000-2048
+// wide and have the room to give. The 1024-wide menu rooms do not, so by default
+// they keep a 4:3 view and get a 4:3 region, pillarboxed inside the 16:9 window
+// rather than stretched to fill it.
+//
+// A menu room can escape the pillarbox by being WIDENED instead -- room_set_width
+// plus a full-width view -- but only if something re-centres its 1024-authored
+// layout afterwards. That is what wide_list is: the rooms widescreen.gml knows
+// how to adapt. rm_MainMenu is there because its background is a live battle that
+// BSF already drives off room_width; the rest stay pillarboxed.
+//
+// That pillarbox is NOT free, and assuming it was is what shipped a bug: GM's
+// default region scaling is "stretch to fill the window", so a 2880x2160 region
+// in a 3840x2160 window renders every menu 1.3333x too wide. Measured, not
+// reasoned -- a 300x300 world-unit square is 844x844 in the region and
+// 1125.5x844 on screen. window_set_region_scale(-1, 0) selects scale-to-fit-
+// keeping-aspect and is a no-op in the gameplay rooms, whose region already
+// equals the window.
+//
+// BSF's HUD is anchored to view_wview rather than to a hardcoded 1024, so the
+// widened view gives genuinely more visible battlefield with the panels still
+// stuck to the edges. That was checked, not assumed.
+//
+// ----------------------------------------------------------------- gotchas
+// * rm_Options ships with views DISABLED, so its region comes from the room size
+//   and it alone snaps back to 1024x768 -- on the very screen a picker belongs
+//   on. room_set_view_enabled(r, 1) fixes it and is harmless on the other 24.
+// * The mod bootstrap is injected into GUI_MainTitle's startup event, and
+//   GUI_MainTitle lives in rm_MainMenu. room_restart() there re-runs the
+//   bootstrap: fresh objects, fresh apply, another restart, forever. Hence the
+//   global guard below. This is not hypothetical; it is what happened.
+// * Room ids are not resource-tree order -- deleted slots leave gaps, so the
+//   ids run 0..43 for 25 rooms. Iterate ids and test room_exists().
+
+if (variable_global_exists('bsf_res_init')) exit;
+global.bsf_res_init = 1;
+
+var m, i;
+m = object_add();
+
+object_event_add(m, 0, 0,
+    // Rooms whose width is 1024 and so cannot host a wider view.
+    // rm_ChooseShips belongs here despite being an 1888-wide room: it drives its
+    // OWN view. ctr_ChooseShips opens at view_wview 3712 and steps down 128 a frame
+    // until it settles at exactly 1024, and its buttons, text and cursor are scaled
+    // by view_wview[0]/1024 -- that factor is the intro animation, not a widescreen
+    // layout, so it must reach 1 at rest. Give the room a 4:3 port and it does.
+    'narrow_list = "|rm_Briefing|rm_Scores|rm_ChooseColour|rm_Options|rm_ChooseShips|";' +
+    // Rooms whose 1024-wide layout `widescreen.gml` knows how to re-centre, so
+    // they can take a full-width view and a WIDER ROOM instead of a 4:3 region.
+    // The room width is the point: BSF's menu battle spawns, converges and
+    // herds on room_width, so widening the room is what makes the fight fill
+    // the screen. Nothing here works without the matching adapter.
+    'wide_list = "|rm_MainMenu|";' +
+    // Candidates are filtered against the actual monitor, because the list is
+    // shipped to people whose screens we cannot know. Anything taller or wider
+    // than the display is dropped (GM clamps the region to the display anyway,
+    // so such an entry would silently resolve to something else), and an entry
+    // equal to the display is dropped because the display is appended last --
+    // otherwise the list contains the same size twice and one step of the cycle
+    // does nothing, which reads as a dead keypress.
+    'var k, dw, dh;' +
+    'dw = display_get_width(); dh = display_get_height();' +
+    'cand_w[0] = 1280; cand_h[0] =  720;' +
+    'cand_w[1] = 1600; cand_h[1] =  900;' +
+    'cand_w[2] = 1920; cand_h[2] = 1080;' +
+    'cand_w[3] = 2560; cand_h[3] = 1440;' +
+    'cand_w[4] = 3840; cand_h[4] = 2160;' +
+    'nres = 0;' +
+    'for (k = 0; k < 5; k += 1) {' +
+    '  if (cand_w[k] > dw || cand_h[k] > dh) continue;' +
+    '  if (cand_w[k] == dw && cand_h[k] == dh) continue;' +
+    '  reslist_w[nres] = cand_w[k]; reslist_h[nres] = cand_h[k]; nres += 1;' +
+    '}' +
+    // The monitor itself is always offered, and is the default on first run.
+    'reslist_w[nres] = dw; reslist_h[nres] = dh; nres += 1;' +
+    'cur_w = 0; cur_h = 0; sel = nres - 1; lastroom = -1;' +
+    'var g;' +
+    'if (file_exists("mods/res.cfg")) {' +
+    '  g = file_text_open_read("mods/res.cfg");' +
+    '  pend_w = real(file_text_read_string(g)); file_text_readln(g);' +
+    '  pend_h = real(file_text_read_string(g)); file_text_close(g);' +
+    '} else { pend_w = display_get_width(); pend_h = display_get_height(); }');
+
+object_event_add(m, 3, 0,
+    // Re-asserted on every room change because the drawing region is rebuilt on
+    // every room load, and a rebuilt region comes back at the default scaling.
+    // -1 = scale up as far as the window allows while keeping the region's own
+    // aspect; 0 = do not resize the window to suit.
+    'if (room != lastroom) { lastroom = room; window_set_region_scale(-1, 0); }' +
+    // F11 / shift-F11 cycle. A real build would drive this from the Options
+    // screen; the key is here so the feature is usable without touching BSF's UI.
+    'if (keyboard_check_pressed(vk_f11)) {' +
+    '  if (keyboard_check(vk_shift)) sel -= 1; else sel += 1;' +
+    '  if (sel >= nres) sel = 0;' +
+    '  if (sel < 0) sel = nres - 1;' +
+    '  pend_w = reslist_w[sel]; pend_h = reslist_h[sel];' +
+    '}' +
+    'if (pend_w > 0) {' +
+    '  var pw, ph, vw, mw, r, f;' +
+    '  pw = pend_w; ph = pend_h; pend_w = 0; pend_h = 0;' +
+    '  if (pw == cur_w && ph == cur_h) exit;' +          // never restart for a no-op
+    '  cur_w = pw; cur_h = ph;' +
+    '  vw = floor(768 * pw / ph);' +                     // widened view, 16:9 -> 1365
+    '  mw = floor(ph * 1024 / 768);' +                   // 4:3 region for narrow rooms
+    '  for (r = 0; r < 64; r += 1) {' +
+    '    if (!room_exists(r)) continue;' +
+    '    if (string_pos("|" + room_get_name(r) + "|", wide_list) > 0) {' +
+    '      room_set_width(r, vw);' +
+    '      room_set_view(r, 0, 1, 0, 0,   vw, 768, 0, 0, pw, ph, 32, 32, -1, -1, -1);' +
+    '    } else if (string_pos("|" + room_get_name(r) + "|", narrow_list) > 0) {' +
+    '      room_set_view(r, 0, 1, 0, 0, 1024, 768, 0, 0, mw, ph, 32, 32, -1, -1, -1);' +
+    '    } else {' +
+    '      room_set_view(r, 0, 1, 0, 0,   vw, 768, 0, 0, pw, ph, 32, 32, -1, -1, -1);' +
+    '    }' +
+    '    room_set_view_enabled(r, 1);' +
+    '  }' +
+    '  f = file_text_open_write("mods/res.cfg");' +
+    '  file_text_write_string(f, string(pw)); file_text_writeln(f);' +
+    '  file_text_write_string(f, string(ph)); file_text_writeln(f);' +
+    '  file_text_close(f);' +
+    '  room_restart();' +
+    '}');
+
+i = instance_create(0, 0, m);
+i.persistent = true;
+i.depth = -10000001;
+
+// Published so the options screen can drive the picker instead of duplicating
+// the resolution list and the apply logic.
+global.bsf_res_mgr = i;
