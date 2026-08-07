@@ -7,8 +7,10 @@ compatibility issues: real widescreen, real resolutions, crisp text, and a serio
 you play under wine. From here I'm hoping to extend the campaign, add more generic mod
 support, and multiplayer.
 
-It ships no part of the game. You bring your own copy of v0.90d, the patcher edits it in
-place, and everything can be switched back off.
+It ships no part of the game. You bring your own copy — **this only works with v0.90d** —
+the patcher edits it in place, and everything can be switched back off. The original
+download links are long gone; [this Internet Archive capture](https://web.archive.org/web/20140322015221/http://www.wyrdysm.com/battleshipsforever/battleshipsforeverv090d.zip)
+seems to be the last copy of v0.90d still online.
 
 ## How it works
 
