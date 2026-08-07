@@ -62,16 +62,28 @@ jobs:
           --hidden-import gm7
           tools/install.py
 
-      # Smoke test: the exe must start, find no game, and say so. Catches a
-      # missing hidden import, which is otherwise invisible until a user runs it.
+      # Smoke test: the exe must start, find no game, say so, and exit 1 -- that
+      # nonzero exit is the CONTRACT for the not-found path, so it is asserted
+      # rather than suppressed. Catches a missing hidden import, which is
+      # otherwise invisible until a user runs it.
+      #
+      # The explicit `exit 0` at the end is load-bearing: the Actions runner
+      # appends `exit $LASTEXITCODE` to every pwsh step, so without it the step
+      # inherits the installer's expected exit 1 and fails after all checks pass.
       - name: Smoke test
         run: |
           $out = & ".\dist\BSF-Legacy-Installer.exe" 2>&1 | Out-String
+          $code = $LASTEXITCODE
           Write-Host $out
           if ($out -notmatch 'Could not find BattleshipsForever.exe') {
             Write-Error "installer did not produce the expected not-found message"
             exit 1
           }
+          if ($code -ne 1) {
+            Write-Error "expected exit code 1 for the not-found path, got $code"
+            exit 1
+          }
+          exit 0
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
         with:
