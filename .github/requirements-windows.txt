@@ -23,8 +23,13 @@ altgraph==0.17.5 \
     --hash=sha256:f3a22400bce1b0c701683820ac4f3b159cd301acab067c51c653e06961600597
 packaging==26.3 \
     --hash=sha256:d7193f7c8e4e93f444fde0262bf90af30e16fa0ad0ad44cb553c87339b23cd1c
-pefile==2024.8.26 \
-    --hash=sha256:76f8b485dcd3b1bb8166f1128d395fa3d87af26360c2358fb75b80019b957c6f
+# NOT 2024.8.26: PyInstaller pins `pefile != 2024.8.26` (that release has a
+# severe performance regression in its binary parsing), so the newest version
+# its resolver accepts is 2023.2.7. Both the wheel and sdist hashes are listed;
+# pip uses the wheel.
+pefile==2023.2.7 \
+    --hash=sha256:da185cd2af68c08a6cd4481f7325ed600a88f6a813bad9dea07ab3ef73d8d8d6 \
+    --hash=sha256:82e6114004b3d6911c77c3953e3838654b04511b8b66e8583db70c65998017dc
 pyinstaller==6.11.1 \
     --hash=sha256:7ac83c0dc0e04357dab98c487e74ad2adb30e7eb186b58157a8faf46f1fa796f
 pyinstaller-hooks-contrib==2026.6 \
