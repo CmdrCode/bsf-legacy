@@ -83,6 +83,14 @@ python3 tools/patch_bsf.py /path/to/BattleshipsForever/ShipMaker.exe   # the edi
 
 The Windows installer patches both automatically when `ShipMaker.exe` is present.
 
+On Linux the patcher also drops `BattleshipsForever_Linux.sh` and `ShipMaker_Linux.sh`
+next to the exes — from then on those are how you play: each runs its exe under wine
+in a private prefix (`~/.local/share/bsf-legacy`), created automatically on the first
+run in about ten seconds. No winetricks, no wine configuration, nothing outside that
+folder; wine itself comes from your distro (`sudo apt install wine` or equivalent),
+and the script tells you exactly what to install if it is missing. `--revert`
+removes the launcher again.
+
 The cursor cache additionally needs `bsfnat.dll`, cross-compiled with mingw-w64 via
 `tools/build.sh`; skip it with `--no-cursor` and everything else still works.
 

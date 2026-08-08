@@ -30,6 +30,10 @@ Three independent fixes, all applied by default:
     patch_bsf.py <exe> --revert-hwvp                    undo just the two HWVP bytes
     patch_bsf.py <exe> --revert-cursor                  remove the cursor cache
 
+On Linux the patcher additionally drops `<Exe>_Linux.sh` next to each exe it
+patches -- a self-contained wine launcher (private prefix, no setup knowledge
+needed). `--revert` removes it.
+
 Contains no game data — only the one-line bootstraps it writes, a handful of
 same-length GML expression rewrites, and two flag bytes. It operates on the copy
 of the game you already have.
@@ -230,6 +234,92 @@ def sm_mods_step(exe):
           'creating mods/smres.off')
 
 
+# The wine launcher dropped next to each patched exe -- Linux only, and
+# GENERATED rather than shipped, so it only ever exists where it is valid.
+# Every choice in it was settled empirically on a live setup:
+#   * a PRIVATE prefix, so a user's ~/.wine (virtual desktops, DLL overrides,
+#     a broken prefix) can never interfere -- and we never touch theirs;
+#   * mscoree/mshtml disabled, so the first boot never prompts to download
+#     Wine Mono or Gecko (GM 7.0 needs neither);
+#   * no WINEARCH, so it works on both multiarch and new-wow64 wine builds;
+#   * no wine virtual desktop -- the mod's fullscreen is a borderless window,
+#     which killed the display-mode changes that made desktops necessary.
+# @EXE@ / @STEM@ are substituted at write time.
+LAUNCHER = '''#!/bin/sh
+# @EXE@ under wine -- written by the BSF-Legacy patcher (Linux only).
+# Safe to delete; repatching writes it again.
+#
+# Runs in a private wine prefix under ~/.local/share/bsf-legacy, so nothing
+# in ~/.wine is touched or inherited. The first run creates the prefix (about
+# ten seconds); after that, launches are instant. No winetricks, no virtual
+# desktop, no other setup.
+
+EXE="@EXE@"
+HERE="$(cd "$(dirname "$0")" && pwd)"
+cd "$HERE" || exit 1
+
+if [ ! -f "$EXE" ]; then
+    echo "$EXE is not next to this script -- keep them in the game folder." >&2
+    exit 1
+fi
+
+if ! command -v wine >/dev/null 2>&1; then
+    echo "wine is not installed. One of these should get it:" >&2
+    echo "  Ubuntu/Mint: sudo apt install wine" >&2
+    echo "  Debian:      sudo dpkg --add-architecture i386 && sudo apt update && sudo apt install wine wine32" >&2
+    echo "  Fedora:      sudo dnf install wine" >&2
+    echo "  Arch:        sudo pacman -S wine    # needs the multilib repo" >&2
+    exit 127
+fi
+
+WINEPREFIX="${XDG_DATA_HOME:-$HOME/.local/share}/bsf-legacy/prefix"
+export WINEPREFIX
+export WINEDLLOVERRIDES="mscoree,mshtml="    # skip the Mono/Gecko download prompts
+export WINEDEBUG=-all
+
+if [ ! -d "$WINEPREFIX" ]; then
+    echo "First run: creating a private wine prefix (about ten seconds)..."
+    mkdir -p "$WINEPREFIX"
+    wineboot >/dev/null 2>&1
+fi
+
+LOG="$WINEPREFIX/@STEM@.log"
+wine "$EXE" >"$LOG" 2>&1
+STATUS=$?
+if [ "$STATUS" -ne 0 ]; then
+    if grep -qiE "bad exe format|32-bit" "$LOG" 2>/dev/null; then
+        echo "This wine cannot run 32-bit programs. On Debian/Ubuntu:" >&2
+        echo "  sudo dpkg --add-architecture i386 && sudo apt update && sudo apt install wine32" >&2
+    else
+        echo "wine exited with status $STATUS -- log kept at $LOG" >&2
+    fi
+fi
+exit "$STATUS"
+'''
+
+
+def launcher_step(exe, remove=False):
+    """Write (or remove) the `<Exe>_Linux.sh` wine launcher next to the exe.
+
+    A no-op on anything but Linux: the Windows installer must not leave stray
+    shell scripts in a Windows install.
+    """
+    if sys.platform != 'linux':
+        return
+    base = os.path.basename(exe)
+    stem = base[:-4] if base.lower().endswith('.exe') else base
+    path = os.path.join(os.path.dirname(os.path.abspath(exe)), stem + '_Linux.sh')
+    if remove:
+        if os.path.exists(path):
+            os.remove(path)
+            print(f'launcher: removed {os.path.basename(path)}')
+        return
+    with open(path, 'w', newline='\n') as f:
+        f.write(LAUNCHER.replace('@EXE@', base).replace('@STEM@', stem))
+    os.chmod(path, 0o755)
+    print(f'launcher: wrote {os.path.basename(path)} — run it to play under wine')
+
+
 def revert(exe):
     bak = exe + '.bak'
     if not os.path.exists(bak):
@@ -241,6 +331,7 @@ def revert(exe):
     gone = cursorfix.remove(os.path.dirname(os.path.abspath(exe)))
     if gone:
         print('cursor cache: also removed ' + ', '.join(gone))
+    launcher_step(exe, remove=True)
 
 
 def main():
@@ -270,6 +361,7 @@ def main():
     # Last: it needs mods/init.gml, which mod_loader() creates the folder for.
     if '--no-cursor' not in sys.argv:
         cursor_step(exe)
+    launcher_step(exe)
 
 
 def mod_loader(exe, keep_errors=False):
