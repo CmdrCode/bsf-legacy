@@ -2,7 +2,7 @@
 """Battleships Forever Legacy installer -- the entry point the .exe wraps.
 
 Does the whole job in one run: find the game, confirm it is the build this patcher
-knows, put the modules in place, and apply the two executable patches. Safe to run
+knows, put the modules in place, and apply the executable patches. Safe to run
 twice; every step reports what it found and what it changed.
 
     python3 tools/install.py                    find the game, install
@@ -30,6 +30,7 @@ sys.path.insert(0, HERE)
 import cursorfix                                            # noqa: E402
 import patch_bsf                                            # noqa: E402
 import hwvp                                                 # noqa: E402
+import dplay                                                # noqa: E402
 
 EXE_NAME = 'BattleshipsForever.exe'
 SM_NAME = 'ShipMaker.exe'
@@ -179,9 +180,11 @@ def main():
     if '--uninstall' in flags:
         patch_bsf.revert(exe)                    # also removes the Linux launcher
         hwvp.revert(exe)
+        dplay.revert(exe)
         if sm and os.path.exists(sm + '.bak'):
             patch_bsf.revert(sm)
             hwvp.revert(sm)
+            dplay.revert(sm)
         print('done. mods/ left in place -- delete it to remove the modules.')
         return
 
@@ -196,12 +199,14 @@ def main():
     print('\npatching executable...')
     patch_bsf.mod_loader(exe)
     patch_bsf.hwvp_step(exe)
+    patch_bsf.dplay_step(exe)
     patch_bsf.launcher_step(exe)                 # Linux only; no-op on Windows
 
     if sm:
         print('\npatching ship editor...')
         patch_bsf.mod_loader(sm)
         patch_bsf.hwvp_step(sm)
+        patch_bsf.dplay_step(sm)
         patch_bsf.launcher_step(sm)
 
     print('\nDone. Launch the game as usual.')

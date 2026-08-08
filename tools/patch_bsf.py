@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Battleships Forever patcher: mod loader, the HWVP device-flag fix, the cursor cache.
+"""Battleships Forever patcher: mod loader, HWVP fix, DirectPlay skip, cursor cache.
 
 Knows two executables, both from the v0.90d package and both the same GM 7.0
 runner: `BattleshipsForever.exe` (the game) and `ShipMaker.exe` (the ship
 editor). The build is identified by hash and each gets its own patch recipe.
 
-Three independent fixes, all applied by default:
+Four independent fixes, all applied by default:
 
   1. MOD LOADER — injects a one-line bootstrap into the startup code so the exe
      will run GML from a file next to it (`mods/init.gml` for the game,
@@ -15,19 +15,26 @@ Three independent fixes, all applied by default:
   2. HWVP — flips the Direct3D 8 device from software to hardware vertex
      processing. Two bytes, identical in both exes (their CODE sections are
      byte-identical). Large speedup under wine, much less on Windows.
-  3. CURSOR CACHE — `mouse_x` costs 176 us a read under wine and both exes read
+  3. DIRECTPLAY SKIP — the runner loads DPlayX.dll at startup for multiplayer
+     functions no BSF script ever calls, and on Windows 10/11 that load makes
+     the OS demand the legacy "DirectPlay" feature be installed, every launch
+     until the user gives in. Two bytes force the loader's own skip path.
+     Identical in both exes (their CODE sections are byte-identical).
+  4. CURSOR CACHE — `mouse_x` costs 176 us a read under wine and both exes read
      the pair constantly; this answers them from a cache refreshed twice a
      frame. Changes no bytes of the exe — it is a DLL plus files in `mods/`.
      Needs the mod loader.
 
-    patch_bsf.py <BattleshipsForever.exe>               all three
-    patch_bsf.py <ShipMaker.exe>                        all three + resize module
+    patch_bsf.py <BattleshipsForever.exe>               all four
+    patch_bsf.py <ShipMaker.exe>                        all four + resize module
     patch_bsf.py <exe> --no-hwvp                        no device-flag patch
+    patch_bsf.py <exe> --no-dplay                       no DirectPlay skip
     patch_bsf.py <exe> --no-cursor                      no cursor cache
     patch_bsf.py <exe> --hwvp-only                      HWVP only (no mod loader)
     patch_bsf.py <exe> --cursor-only                    cursor cache only
     patch_bsf.py <exe> --revert                         restore .bak (pre-mod-loader state)
     patch_bsf.py <exe> --revert-hwvp                    undo just the two HWVP bytes
+    patch_bsf.py <exe> --revert-dplay                   undo just the DirectPlay skip
     patch_bsf.py <exe> --revert-cursor                  remove the cursor cache
 
 On Linux the patcher additionally drops `<Exe>_Linux.sh` next to each exe it
@@ -39,9 +46,10 @@ same-length GML expression rewrites, and two flag bytes. It operates on the copy
 of the game you already have.
 
 The patches are orthogonal: the mod loader rewrites the resource tree at the
-tail of the exe, HWVP rewrites two bytes in CODE. The build check below hashes the
-exe with the HWVP bytes normalised out, so either can be applied first, and having
-one already applied never makes the other refuse.
+tail of the exe, HWVP and the DirectPlay skip each rewrite two bytes in CODE.
+The build check below hashes the exe with both byte pairs normalised out, so
+any can be applied first, and having one already applied never makes another
+refuse.
 
 How it works: GM 7.0 keeps its resource tree as `[u32 len][zlib]` at the tail of
 the exe, encrypted with "gmkrypt" (see gm7.py). We inflate, decrypt, overwrite
@@ -58,6 +66,7 @@ import sys
 import zlib
 
 import cursorfix
+import dplay
 import gm7
 import hwvp
 
@@ -144,17 +153,19 @@ KNOWN = {
 
 
 def sha256_build(path):
-    """sha256 with the HWVP flag bytes normalised to SWVP.
+    """sha256 with the HWVP and DirectPlay-skip bytes normalised to stock.
 
     So the build check identifies the *build*, not which of our patches happen to
-    be applied. Without this, HWVP-first would make the mod loader report an
-    unrecognised build and refuse.
+    be applied. Without this, applying either CODE patch first would make the mod
+    loader report an unrecognised build and refuse.
     """
     with open(path, 'rb') as f:
         d = bytearray(f.read())
     for o in hwvp.OFFSETS:
         if o < len(d) and d[o] == hwvp.HWVP:
             d[o] = hwvp.SWVP
+    if bytes(d[dplay.OFFSET:dplay.OFFSET + 2]) == dplay.SKIP:
+        d[dplay.OFFSET:dplay.OFFSET + 2] = dplay.TEST
     return hashlib.sha256(bytes(d)).hexdigest()
 
 
@@ -177,6 +188,29 @@ def hwvp_step(exe, to=hwvp.HWVP):
         print(f'HWVP: {was} -> {now} at {where} '
               f'(D3DCREATE_{"HARDWARE" if to == hwvp.HWVP else "SOFTWARE"}'
               f'_VERTEXPROCESSING|FPU_PRESERVE)')
+
+
+def dplay_step(exe, to=dplay.SKIP):
+    """Apply (or revert) the DirectPlay-init skip, reporting before and after.
+
+    Catches hwvp.ShapeError, the base of dplay.ShapeError: apply() raises the
+    parent from the shared build check and the subclass from the site checks.
+    """
+    try:
+        changed, before, after = dplay.apply(exe, to)
+    except hwvp.ShapeError as exc:
+        sys.exit(f'DirectPlay: {exc}')
+    if not changed:
+        state = 'skipped' if to == dplay.SKIP else 'stock'
+        print(f'DirectPlay: init already {state} ({after.hex(" ")}) at '
+              f'{dplay.OFFSET:#010x} — nothing to do')
+    elif to == dplay.SKIP:
+        print(f'DirectPlay: {before.hex(" ")} -> {after.hex(" ")} at '
+              f'{dplay.OFFSET:#010x} — DPlayX.dll no longer loaded '
+              '(kills the Windows "needs DirectPlay" prompt)')
+    else:
+        print(f'DirectPlay: {before.hex(" ")} -> {after.hex(" ")} at '
+              f'{dplay.OFFSET:#010x} — stock startup load restored')
 
 
 def cursor_step(exe, install=True):
@@ -368,6 +402,8 @@ def main():
         return revert(exe)
     if '--revert-hwvp' in sys.argv:
         return hwvp_step(exe, to=hwvp.SWVP)
+    if '--revert-dplay' in sys.argv:
+        return dplay_step(exe, to=dplay.TEST)
     if '--revert-cursor' in sys.argv:
         return cursor_step(exe, install=False)
 
@@ -379,6 +415,8 @@ def main():
     build = mod_loader(exe, keep_errors='--keep-errors' in sys.argv)
     if '--no-hwvp' not in sys.argv:
         hwvp_step(exe)
+    if '--no-dplay' not in sys.argv:
+        dplay_step(exe)
     if build and build['shipmaker']:
         sm_mods_step(exe)
     # Last: it needs mods/init.gml, which mod_loader() creates the folder for.

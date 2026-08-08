@@ -45,6 +45,8 @@ cursor cache is a native DLL that hooks a Windows API import.
 * Crisp menu text. Labels are drawn from the game's own font instead of magnified
   1024×768 bitmaps.
 * No more "Error defining an external function" dialogs on every launch.
+* Fixes the DirectPlay prompt issue: "needs the following Windows feature: DirectPlay" on
+  Windows 10/11. (Applies to the Ship Maker too.)
 * Off-screen sections, turrets and doodads skip their draw — worth a few ms in big battles.
 
 **The Ship Maker**
@@ -105,6 +107,7 @@ The cursor cache additionally needs `bsfnat.dll`, cross-compiled with mingw-w64 
 | `smpick.gml` (ShipMaker part picker) | create `mods/smpick.off` — it is opt-*out* |
 | `resolution.gml`, `options.gml`, `aspect.gml`, `widescreen.gml` | rename or delete the `.gml` itself |
 | the HWVP bytes | `--revert-hwvp` |
+| the DirectPlay skip | `--revert-dplay` |
 | the mod loader + error-dialog flag | `--revert` (restores the `.bak`) |
 
 No repatch needed for the module-level ones, so this is also how you A/B things yourself.
@@ -112,13 +115,17 @@ No repatch needed for the module-level ones, so this is also how you A/B things 
 ## What the patcher writes to the exe
 
 It knows both v0.90d executables — the game and `ShipMaker.exe` — and refuses anything it
-does not recognise (the build is hashed with the HWVP bytes normalised out, so a
+does not recognise (the build is hashed with the patched byte pairs normalised out, so a
 half-patched copy still matches):
 
 * **the mod loader** — a one-line bootstrap space-padded over a dead comment in the resource
   tree (the game's runs `mods/init.gml`, ShipMaker's runs `mods/sm.gml`), same length in and
   out, so nothing else moves;
 * **HWVP** — the two device-flag bytes, patched by verified file offset, never by pattern;
+* **the DirectPlay skip** — two bytes that force a branch the startup code already has for
+  skipping its DirectPlay load. The multiplayer functions it would wire up are never called
+  by any script in either exe, and skipping the load is what stops Windows 10/11 demanding
+  the legacy DirectPlay feature on every launch;
 * **the error-display flag** — one `1` → `0` in the settings block (game only; ShipMaker
   has no spurious startup errors to silence);
 * **ShipMaker only:** ten hardcoded `window/1016`-style menu-positioning expressions,
@@ -129,9 +136,10 @@ under `mods/` is plain GML text executed at runtime.
 
 ```bash
 python3 tools/patch_bsf.py <exe> --revert          # restore the .bak
-python3 tools/patch_bsf.py <exe> --revert-hwvp     # undo just the two bytes
+python3 tools/patch_bsf.py <exe> --revert-hwvp     # undo just the two HWVP bytes
+python3 tools/patch_bsf.py <exe> --revert-dplay    # undo just the DirectPlay skip
 python3 tools/patch_bsf.py <exe> --revert-cursor   # remove the cursor cache
-python3 tools/patch_bsf.py <exe> --hwvp-only       # just the two bytes, no mod loader
+python3 tools/patch_bsf.py <exe> --hwvp-only       # just the HWVP bytes, no mod loader
 ```
 
 ## Credit
