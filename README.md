@@ -29,7 +29,7 @@ cursor cache is a native DLL that hooks a Windows API import.
 
 ## What it changes
 
-**Everywhere — Windows and Linux alike**
+**The game**
 
 * True widescreen support. Any aspect ratio without stretching; the camera, zoom and main
   menu all adapt. (Stock "Widescreen" was 1280×960 — that's 4:3.)
@@ -44,27 +44,21 @@ cursor cache is a native DLL that hooks a Windows API import.
   1024×768 bitmaps.
 * No more "Error defining an external function" dialogs on every launch.
 * Off-screen sections, turrets and doodads skip their draw — worth a few ms in big battles.
-* **The Ship Maker renders 1:1 at any window size.** Stock ShipMaker has a resizable window
-  wrapped around a fixed 1016×704 canvas that just gets stretched; patched, the drawing
-  region follows the window, so a bigger window is more crisp canvas, not bigger blur. The
-  window size is remembered between sessions, and the ship being edited survives every
-  resize. Below 1016×704 it falls back to the stock stretch so the UI never clips.
 
-**Linux/wine only** — BSF is far slower under wine than it should be, for reasons that are
-wine's, not the game's:
+**The Ship Maker**
+
+* Renders 1:1 at any window size instead of stretching a fixed 1016×704 canvas.
+* Middle-mouse drag pan (stock teleports the canvas to the click point), with a live zoom % readout.
+* Fixed mouse-cursor issues that broke part-dragging under Linux/wine.
+
+**Faster under wine** — BSF is far slower under wine than it should be, for reasons that are
+wine's, not the game's. These help both the game and the editor:
 
 * HWVP — two bytes in the exe flip Direct3D 8 from software to hardware vertex processing.
   15 → 27 fps under wine, near-nothing on Windows, and provably no visual change.
 * Cursor cache — hooks the `GetCursorPos` import and serves ~160 reads a frame from a cache.
   `mouse_x` costs 176 µs a read under wine; this buys ~13 ms a frame. Cheap on Windows, so
   the Windows installer leaves it out.
-* The cursor cache also hooks `SetCursorPos`, which un-breaks dragging in the Ship Maker.
-  Its drag code warps the cursor to the window centre every step and immediately reads it
-  back — under wine that read-back is stale for the rest of the frame, so most of a drag
-  gets silently undone and new parts teleport off-screen (this is broken in the *stock*
-  game under wine, resolution mod or not; measured: only a third of the mouse motion
-  survived). Stamping the cache with the warped position on every `SetCursorPos` makes the
-  read-back exact.
 
 ## Install
 
@@ -101,6 +95,8 @@ The cursor cache additionally needs `bsfnat.dll`, cross-compiled with mingw-w64 
 | `crisp.gml`, `logo.gml`, `legacy.gml`, `cursor.gml` | delete the matching `mods/*.on` marker |
 | `fastdraw.gml` (the draw cull) | create `mods/fastdraw.off` — it is opt-*out* |
 | `smres.gml` (ShipMaker 1:1 resolution) | create `mods/smres.off` — it is opt-*out* |
+| `smpan.gml` (ShipMaker middle-mouse drag pan) | create `mods/smpan.off` — it is opt-*out* |
+| `smzoom.gml` (ShipMaker zoom % readout) | create `mods/smzoom.off` — it is opt-*out* |
 | `resolution.gml`, `options.gml`, `aspect.gml`, `widescreen.gml` | rename or delete the `.gml` itself |
 | the HWVP bytes | `--revert-hwvp` |
 | the mod loader + error-dialog flag | `--revert` (restores the `.bak`) |
