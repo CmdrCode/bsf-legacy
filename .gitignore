@@ -67,6 +67,8 @@ toolchain/
 __pycache__/
 *.pyc
 
-# Local-only notes and per-machine git hooks
+# Local-only notes, per-machine git hooks, and Claude Code config
+# (.claude/ holds local skills/commands and Claude-managed worktrees)
 /CLAUDE.md
 /.githooks/
+/.claude/

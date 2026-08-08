@@ -54,7 +54,17 @@
 // nothing and returns a negative code, which lands in mods/cursor.log; the
 // tick instances are then inert and the game is still exactly stock.
 
-if (variable_global_exists('bsf_cursor_init')) exit;
+// Value test, not existence: this file also runs under ShipMaker (chained from
+// mods/sm.gml), which ships with "uninitialized = 0" ON -- there, a global
+// assigned anywhere in a compiled file already "exists" (as 0) before its
+// first assignment runs, so the game-style existence guard would exit on the
+// very first run. Nested ifs because GML's && does not short-circuit.
+var cinited;
+cinited = 0;
+if (variable_global_exists('bsf_cursor_init'))
+    if (global.bsf_cursor_init)
+        cinited = 1;
+if (cinited) exit;
 global.bsf_cursor_init = 1;
 
 var lf, o, i, diag;
@@ -87,10 +97,15 @@ file_text_write_string(lf, 'defined'); file_text_writeln(lf); file_text_close(lf
 // freeze. 100 ms is three frames at the 30 Hz cap.
 global.cur_ok = external_call(global.cur_hook, 100);
 
+// scpslots is the SetCursorPos pass-through hook: it stamps the cache with
+// the position just SET, because under wine a GetCursorPos in the same frame
+// as a SetCursorPos returns the OLD position. The game never warps the
+// cursor; ShipMaker warps it every step of a drag, and reads it back.
 lf = file_text_open_append('mods/cursor.log');
 file_text_write_string(lf, 'hook=' + string(global.cur_ok)
     + ' slots=' + string(external_call(global.cur_stat, 1))
     + ' stcslots=' + string(external_call(global.cur_stat, 2))
+    + ' scpslots=' + string(external_call(global.cur_stat, 19))
     + ' slotva=' + string(external_call(global.cur_stat, 7))
     + ' stcva=' + string(external_call(global.cur_stat, 10)));
 file_text_writeln(lf); file_text_close(lf);

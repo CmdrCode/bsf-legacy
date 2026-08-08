@@ -32,6 +32,7 @@ import patch_bsf                                            # noqa: E402
 import hwvp                                                 # noqa: E402
 
 EXE_NAME = 'BattleshipsForever.exe'
+SM_NAME = 'ShipMaker.exe'
 
 
 def resource_root():
@@ -77,20 +78,43 @@ def find_game(explicit=None):
 
 
 def already_patched(exe):
-    """True if our mod-loader bootstrap is already in the resource tree.
+    """True if a mod-loader bootstrap of ours is already in the resource tree.
 
-    Read-only: inflates and decrypts the tree and looks for the marker, exactly
-    as patch_bsf.mod_loader does before it decides to act.
+    Read-only: inflates and decrypts the tree and looks for the markers, exactly
+    as patch_bsf.mod_loader does before it decides to act. Each build has its
+    own marker (the game runs mods/init.gml, ShipMaker runs mods/sm.gml).
     """
     try:
         import gm7
         _raw, (_pos, _clen, blob) = gm7.load(exe)
         plain = gm7.gmkrypt_decrypt(blob)[0]
-        return patch_bsf.MARKER in plain
+        return any(b['marker'] in plain for b in patch_bsf.KNOWN.values())
     except Exception:
         # Anything unreadable falls through to the hash check, which refuses
         # safely rather than guessing.
         return False
+
+
+def identify(exe, label):
+    """Report the build, refusing an exe this patcher does not know.
+
+    Identify BEFORE writing anything. sha256_build normalises the HWVP bytes
+    out, so an HWVP-patched copy is still recognised -- but the mod loader
+    rewrites the resource tree, so an already-installed copy hashes to something
+    unknown by definition. Check for our own marker FIRST, or running the
+    installer twice reports "unrecognised build", which reads like a corrupted
+    game rather than "you already did this".
+    """
+    if already_patched(exe):
+        print('%s: already has the mod loader -- updating modules in place' % label)
+        return
+    digest = patch_bsf.sha256_build(exe)
+    if digest not in patch_bsf.KNOWN:
+        raise SystemExit(
+            'Unrecognised %s build (sha256 %s).\n'
+            'This installer only knows Battleships Forever v0.90d, and will not\n'
+            'touch anything else.' % (label, digest))
+    print('%s: %s -- recognised' % (label, patch_bsf.KNOWN[digest]['name']))
 
 
 def install_mods(game_dir):
@@ -145,28 +169,25 @@ def main():
     game_dir = os.path.dirname(exe)
     print('game: %s' % exe)
 
+    # The ship editor sits next to the game and shares its mods/ folder; it is
+    # patched too when present, and its absence is not an error.
+    sm = os.path.join(game_dir, SM_NAME)
+    if not os.path.exists(sm):
+        sm = None
+        print('%s not found next to the game -- skipping the ship editor' % SM_NAME)
+
     if '--uninstall' in flags:
         patch_bsf.revert(exe)
         hwvp.revert(exe)
+        if sm and os.path.exists(sm + '.bak'):
+            patch_bsf.revert(sm)
+            hwvp.revert(sm)
         print('done. mods/ left in place -- delete it to remove the modules.')
         return
 
-    # Identify the build BEFORE writing anything. sha256_build normalises the
-    # HWVP bytes out, so an HWVP-patched copy is still recognised -- but the mod
-    # loader rewrites the resource tree, so an already-installed copy hashes to
-    # something unknown by definition. Check for our own marker FIRST, or running
-    # the installer twice reports "unrecognised build", which reads like a
-    # corrupted game rather than "you already did this".
-    if already_patched(exe):
-        print('build: already has the mod loader -- updating modules in place')
-    else:
-        digest = patch_bsf.sha256_build(exe)
-        if digest not in patch_bsf.KNOWN:
-            raise SystemExit(
-                'Unrecognised build (sha256 %s).\n'
-                'This installer only knows Battleships Forever v0.90d, and will not\n'
-                'touch anything else.' % digest)
-        print('build: %s -- recognised' % patch_bsf.KNOWN[digest])
+    identify(exe, 'game')
+    if sm:
+        identify(sm, 'ship editor')
 
     print('\ninstalling modules...')
     install_mods(game_dir)
@@ -176,8 +197,16 @@ def main():
     patch_bsf.mod_loader(exe)
     patch_bsf.hwvp_step(exe)
 
+    if sm:
+        print('\npatching ship editor...')
+        patch_bsf.mod_loader(sm)
+        patch_bsf.hwvp_step(sm)
+
     print('\nDone. Launch the game as usual.')
     print('Each module is a marker file in mods/ -- delete one to turn it off.')
+    if sm:
+        print('The ship editor now renders 1:1 at any window size; its window')
+        print('size is remembered in mods/smres.cfg.')
     print('To undo the executable patches:  install --uninstall')
 
 

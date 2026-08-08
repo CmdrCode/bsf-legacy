@@ -44,6 +44,11 @@ cursor cache is a native DLL that hooks a Windows API import.
   1024×768 bitmaps.
 * No more "Error defining an external function" dialogs on every launch.
 * Off-screen sections, turrets and doodads skip their draw — worth a few ms in big battles.
+* **The Ship Maker renders 1:1 at any window size.** Stock ShipMaker has a resizable window
+  wrapped around a fixed 1016×704 canvas that just gets stretched; patched, the drawing
+  region follows the window, so a bigger window is more crisp canvas, not bigger blur. The
+  window size is remembered between sessions, and the ship being edited survives every
+  resize. Below 1016×704 it falls back to the stock stretch so the UI never clips.
 
 **Linux/wine only** — BSF is far slower under wine than it should be, for reasons that are
 wine's, not the game's:
@@ -53,6 +58,13 @@ wine's, not the game's:
 * Cursor cache — hooks the `GetCursorPos` import and serves ~160 reads a frame from a cache.
   `mouse_x` costs 176 µs a read under wine; this buys ~13 ms a frame. Cheap on Windows, so
   the Windows installer leaves it out.
+* The cursor cache also hooks `SetCursorPos`, which un-breaks dragging in the Ship Maker.
+  Its drag code warps the cursor to the window centre every step and immediately reads it
+  back — under wine that read-back is stale for the rest of the frame, so most of a drag
+  gets silently undone and new parts teleport off-screen (this is broken in the *stock*
+  game under wine, resolution mod or not; measured: only a third of the mouse motion
+  survived). Stamping the cache with the warped position on every `SetCursorPos` makes the
+  read-back exact.
 
 ## Install
 
@@ -66,7 +78,10 @@ deleted.
 ```bash
 cp -r mods /path/to/BattleshipsForever/
 python3 tools/patch_bsf.py /path/to/BattleshipsForever/BattleshipsForever.exe
+python3 tools/patch_bsf.py /path/to/BattleshipsForever/ShipMaker.exe   # the editor too
 ```
+
+The Windows installer patches both automatically when `ShipMaker.exe` is present.
 
 The cursor cache additionally needs `bsfnat.dll`, cross-compiled with mingw-w64 via
 `tools/build.sh`; skip it with `--no-cursor` and everything else still works.
@@ -77,6 +92,7 @@ The cursor cache additionally needs `bsfnat.dll`, cross-compiled with mingw-w64 
 |---|---|
 | `crisp.gml`, `logo.gml`, `legacy.gml`, `cursor.gml` | delete the matching `mods/*.on` marker |
 | `fastdraw.gml` (the draw cull) | create `mods/fastdraw.off` — it is opt-*out* |
+| `smres.gml` (ShipMaker 1:1 resolution) | create `mods/smres.off` — it is opt-*out* |
 | `resolution.gml`, `options.gml`, `aspect.gml`, `widescreen.gml` | rename or delete the `.gml` itself |
 | the HWVP bytes | `--revert-hwvp` |
 | the mod loader + error-dialog flag | `--revert` (restores the `.bak`) |
@@ -85,13 +101,18 @@ No repatch needed for the module-level ones, so this is also how you A/B things 
 
 ## What the patcher writes to the exe
 
-Three things, and it refuses any executable it does not recognise (the build is hashed with
-the HWVP bytes normalised out, so a half-patched copy still matches):
+It knows both v0.90d executables — the game and `ShipMaker.exe` — and refuses anything it
+does not recognise (the build is hashed with the HWVP bytes normalised out, so a
+half-patched copy still matches):
 
-* **the mod loader** — a 61-byte bootstrap space-padded over a dead comment in the resource
-  tree, same length in and out, so nothing else moves;
+* **the mod loader** — a one-line bootstrap space-padded over a dead comment in the resource
+  tree (the game's runs `mods/init.gml`, ShipMaker's runs `mods/sm.gml`), same length in and
+  out, so nothing else moves;
 * **HWVP** — the two device-flag bytes, patched by verified file offset, never by pattern;
-* **the error-display flag** — one `1` → `0` in the settings block.
+* **the error-display flag** — one `1` → `0` in the settings block (game only; ShipMaker
+  has no spurious startup errors to silence);
+* **ShipMaker only:** ten hardcoded `window/1016`-style menu-positioning expressions,
+  rewritten same-length for the 1:1 region model.
 
 The cursor cache writes no bytes at all — it is a DLL plus two files in `mods/`. Everything
 under `mods/` is plain GML text executed at runtime.
@@ -100,7 +121,7 @@ under `mods/` is plain GML text executed at runtime.
 python3 tools/patch_bsf.py <exe> --revert          # restore the .bak
 python3 tools/patch_bsf.py <exe> --revert-hwvp     # undo just the two bytes
 python3 tools/patch_bsf.py <exe> --revert-cursor   # remove the cursor cache
-python3 tools/patch_bsf.py <ShipMaker.exe> --hwvp-only   # ShipMaker gets HWVP too
+python3 tools/patch_bsf.py <exe> --hwvp-only       # just the two bytes, no mod loader
 ```
 
 ## Credit

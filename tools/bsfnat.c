@@ -499,17 +499,20 @@ EXP double __cdecl map_sum(void)
 
 typedef BOOL (WINAPI *GCP_FN)(LPPOINT);
 typedef BOOL (WINAPI *STC_FN)(HWND, LPPOINT);
+typedef BOOL (WINAPI *SCP_FN)(int, int);
 
 #define CUR_MAXSLOT 8
 
 static GCP_FN g_gcp_real = NULL;
 static STC_FN g_stc_real = NULL;
+static SCP_FN g_scp_real = NULL;
 static int    g_cur_on    = 0;      /* hook installed                        */
 static int    g_cur_en    = 1;      /* caching active (0 = pass through)     */
 static int    g_cur_stc   = 1;      /* cache ScreenToClient as well          */
-static int    g_gcp_slots = 0, g_stc_slots = 0;
+static int    g_gcp_slots = 0, g_stc_slots = 0, g_scp_slots = 0;
 static double g_gcp_calls = 0, g_gcp_real_n = 0;
 static double g_stc_calls = 0, g_stc_real_n = 0;
+static double g_scp_calls = 0;
 static POINT  g_gcp_pt;
 static int    g_gcp_valid = 0;
 static DWORD  g_gcp_stamp = 0;
@@ -517,7 +520,7 @@ static DWORD  g_cur_ttl   = 100;    /* ms; a SAFETY NET, not the mechanism   */
 static POINT  g_stc_in, g_stc_out;
 static HWND   g_stc_hwnd  = NULL;
 static int    g_stc_valid = 0;
-static unsigned g_gcp_va[CUR_MAXSLOT], g_stc_va[CUR_MAXSLOT];
+static unsigned g_gcp_va[CUR_MAXSLOT], g_stc_va[CUR_MAXSLOT], g_scp_va[CUR_MAXSLOT];
 
 /* ------------------------------------------------------------ verify mode
  * The substitution happens at exactly one place: what GetCursorPos returns.
@@ -587,6 +590,35 @@ static BOOL WINAPI hook_stc(HWND h, LPPOINT p)
     return TRUE;
 }
 
+/* SetCursorPos passes through, then stamps the cache with the value just set.
+ *
+ * This is a correctness hook, not a performance one. Under wine SetCursorPos
+ * settles ASYNCHRONOUSLY: a GetCursorPos in the same frame returns the old
+ * position, or a half-updated one -- measured in ShipMaker, a warp to
+ * (1920,1079) read back as (1920,600) immediately after the call and as the
+ * full pre-warp position later in the same step, going coherent only on the
+ * next frame. ShipMaker's drag code warps the cursor to the window centre
+ * every step and re-anchors on `mxprevious = mouse_x` right after -- with a
+ * stale read-back, the anchor is the PRE-warp position and the next frame
+ * applies the whole warp jump as if the user had moved the mouse: new parts
+ * teleport off-screen and drags snap back. Stamping the cache here makes every
+ * same-frame read return the warp target by definition; by the time the next
+ * tick re-reads the real cursor, wine has settled.
+ *
+ * The ScreenToClient cache is a pure function of its inputs, not of the
+ * cursor, so it needs no invalidation here. */
+static BOOL WINAPI hook_scp(int x, int y)
+{
+    BOOL ok;
+    g_scp_calls += 1;
+    ok = g_scp_real(x, y);
+    if (ok) {
+        g_gcp_pt.x = x; g_gcp_pt.y = y;
+        g_gcp_valid = 1; g_gcp_stamp = GetTickCount();
+    }
+    return ok;
+}
+
 /* Rewrite every import thunk in the MAIN module whose current value is `real`.
  * Matching on the resolved address rather than on the import NAME catches
  * ordinal imports and duplicate descriptors alike, and cannot be fooled by a
@@ -634,12 +666,15 @@ EXP double __cdecl nat_cursor_hook(double ttl_ms)
     if (!u32) return -1.0;
     g_gcp_real = (GCP_FN)(void *)GetProcAddress(u32, "GetCursorPos");
     g_stc_real = (STC_FN)(void *)GetProcAddress(u32, "ScreenToClient");
+    g_scp_real = (SCP_FN)(void *)GetProcAddress(u32, "SetCursorPos");
     if (!g_gcp_real) return -2.0;
     g_cur_ttl = (ttl_ms > 0) ? (DWORD)ttl_ms : 100;
     g_gcp_slots = patch_iat((void *)g_gcp_real, (void *)hook_gcp, g_gcp_va, CUR_MAXSLOT);
     if (g_gcp_slots <= 0) return -3.0;
     if (g_stc_real)
         g_stc_slots = patch_iat((void *)g_stc_real, (void *)hook_stc, g_stc_va, CUR_MAXSLOT);
+    if (g_scp_real)
+        g_scp_slots = patch_iat((void *)g_scp_real, (void *)hook_scp, g_scp_va, CUR_MAXSLOT);
     g_cur_on = 1;
     return 1.0;
 }
@@ -684,6 +719,9 @@ EXP double __cdecl nat_cursor_stat(double which)
     case 16: return (double)g_cur_verify;
     case 17: return (double)g_gcp_pt.x;     /* the cursor last handed out    */
     case 18: return (double)g_gcp_pt.y;
+    case 19: return (double)g_scp_slots;
+    case 20: return g_scp_calls;
+    case 21: return (double)g_scp_va[0];
     default: return -1.0;
     }
 }
@@ -709,6 +747,8 @@ EXP double __cdecl nat_cursor_unhook(void)
     patch_iat((void *)hook_gcp, (void *)g_gcp_real, g_gcp_va, CUR_MAXSLOT);
     if (g_stc_real)
         patch_iat((void *)hook_stc, (void *)g_stc_real, g_stc_va, CUR_MAXSLOT);
+    if (g_scp_real)
+        patch_iat((void *)hook_scp, (void *)g_scp_real, g_scp_va, CUR_MAXSLOT);
     g_cur_on = 0; g_gcp_valid = 0; g_stc_valid = 0;
     return 1.0;
 }

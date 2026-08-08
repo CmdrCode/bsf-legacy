@@ -1,41 +1,50 @@
 #!/usr/bin/env python3
 """Battleships Forever patcher: mod loader, the HWVP device-flag fix, the cursor cache.
 
+Knows two executables, both from the v0.90d package and both the same GM 7.0
+runner: `BattleshipsForever.exe` (the game) and `ShipMaker.exe` (the ship
+editor). The build is identified by hash and each gets its own patch recipe.
+
 Three independent fixes, all applied by default:
 
-  1. MOD LOADER — injects a one-line bootstrap into the game's startup code so it
-     will run GML from `mods/init.gml` next to the exe. Patch once; every mod
-     after that is a text file.
+  1. MOD LOADER — injects a one-line bootstrap into the startup code so the exe
+     will run GML from a file next to it (`mods/init.gml` for the game,
+     `mods/sm.gml` for ShipMaker). Patch once; every mod after that is a text
+     file. For ShipMaker this also installs `mods/sm.gml` + `mods/smres.gml`,
+     the 1:1-resolution module that makes the drawing region follow the window.
   2. HWVP — flips the Direct3D 8 device from software to hardware vertex
-     processing. Two bytes. Large speedup under wine, much
-     less on Windows; see the README.
-  3. CURSOR CACHE — `mouse_x` costs 176 us a read under wine and the game reads
-     the pair ~70 times a frame; this answers them from a cache refreshed twice a
-     frame. Changes no bytes of the exe — it is a DLL plus two files in `mods/`.
-     Needs the mod loader. See the README.
+     processing. Two bytes, identical in both exes (their CODE sections are
+     byte-identical). Large speedup under wine, much less on Windows.
+  3. CURSOR CACHE — `mouse_x` costs 176 us a read under wine and both exes read
+     the pair constantly; this answers them from a cache refreshed twice a
+     frame. Changes no bytes of the exe — it is a DLL plus files in `mods/`.
+     Needs the mod loader.
 
     patch_bsf.py <BattleshipsForever.exe>               all three
-    patch_bsf.py <BattleshipsForever.exe> --no-hwvp     no device-flag patch
-    patch_bsf.py <BattleshipsForever.exe> --no-cursor   no cursor cache
-    patch_bsf.py <ShipMaker.exe> --hwvp-only            HWVP only (no mod loader)
+    patch_bsf.py <ShipMaker.exe>                        all three + resize module
+    patch_bsf.py <exe> --no-hwvp                        no device-flag patch
+    patch_bsf.py <exe> --no-cursor                      no cursor cache
+    patch_bsf.py <exe> --hwvp-only                      HWVP only (no mod loader)
     patch_bsf.py <exe> --cursor-only                    cursor cache only
     patch_bsf.py <exe> --revert                         restore .bak (pre-mod-loader state)
     patch_bsf.py <exe> --revert-hwvp                    undo just the two HWVP bytes
     patch_bsf.py <exe> --revert-cursor                  remove the cursor cache
 
-Contains no game data — only the 61-byte line it writes and two flag bytes. It
-operates on the copy of the game you already have.
+Contains no game data — only the one-line bootstraps it writes, a handful of
+same-length GML expression rewrites, and two flag bytes. It operates on the copy
+of the game you already have.
 
-The two patches are orthogonal: the mod loader rewrites the resource tree at the
+The patches are orthogonal: the mod loader rewrites the resource tree at the
 tail of the exe, HWVP rewrites two bytes in CODE. The build check below hashes the
 exe with the HWVP bytes normalised out, so either can be applied first, and having
 one already applied never makes the other refuse.
 
 How it works: GM 7.0 keeps its resource tree as `[u32 len][zlib]` at the tail of
-the exe, encrypted with "gmkrypt" (see gm7.py). We inflate, decrypt, overwrite a
-dead comment with the bootstrap at EXACTLY the same length -- so no length field
-anywhere in the tree changes -- re-encrypt just that span, re-deflate, and write
-back with a corrected outer length. The bytes after the tree are preserved.
+the exe, encrypted with "gmkrypt" (see gm7.py). We inflate, decrypt, overwrite
+dead comments (and, for ShipMaker, a few hardcoded-resolution expressions) with
+same-length replacements -- so no length field anywhere in the tree changes --
+re-encrypt just the touched spans, re-deflate, and write back with a corrected
+outer length. The bytes after the tree are preserved.
 """
 import hashlib
 import os
@@ -48,13 +57,7 @@ import cursorfix
 import gm7
 import hwvp
 
-# The one build this patcher understands. Offsets and the anchor are specific to
-# it, so anything else is refused rather than corrupted. (The bundled readme says
-# v0.90c; the package is v0.90d. Trust the hash, not the text.)
-KNOWN = {
-    '0a393a0a46c410d87c003bdda8a58fbd777e5f1844a4de0c04d8acb53dede551': 'v0.90d',
-}
-
+# ---------------------------------------------------------------------- the game
 # A dead comment inside GUI_MainTitle's startup event — code that provably runs
 # when the main menu loads.
 ANCHOR = b'//DIFFICULTY SETTING HERE SO THAT IT CAN RESET AFTER SKIRMISH MODES'
@@ -64,6 +67,37 @@ BOOTSTRAP = b'if file_exists("mods/init.gml") execute_file("mods/init.gml")'
 
 MARKER = b'execute_file("mods/init.gml")'   # how we recognise our own work
 
+# ------------------------------------------------------------------- ShipMaker
+# A dead comment inside obj_sidebar's Create event — the editor's master init,
+# run once at startup (and again after the game_restart behind "New ship").
+# It sits BEFORE the editor's own WinAPI init, so a mod must not call the API_*
+# wrappers until its first Step.
+SM_ANCHOR = b"//What next? Blood type? Mother's maiden name? Favorite color?"
+
+SM_BOOTSTRAP = b'if file_exists("mods/sm.gml") execute_file("mods/sm.gml")'
+
+SM_MARKER = b'execute_file("mods/sm.gml")'
+
+# ShipMaker positions its popup/context menus by scaling room coordinates with
+# window/1016 (x) and window/704 (y) — correct for the stock model, where the
+# fixed 1016x704 drawing region is stretched to fill the window. mods/smres.gml
+# replaces that model with a region that always EQUALS the window client size
+# (1:1 pixels), under which the correct screen offset of a UI coordinate is the
+# coordinate itself. Each rewrite below is padded to the original length, keeps
+# a window_get_* call so the shape stays recognisable, and evaluates to plain
+# `x` / `15`. The 800/609 pair is stock sloppiness (copied from elsewhere; the
+# window was never 800x609) — same treatment.
+#
+# Note the trade-off: with the exe patched but the smres module removed, a
+# RESIZED window positions menus unscaled (stock misplaced them too, only
+# scaled); at the default 1016x704 both models agree exactly.
+SM_MENU_EDITS = (
+    (b'x*window_get_width()/1016',           b'x+0*window_get_width()',           4),
+    (b'15*window_get_height()/704',          b'15+0*window_get_height()',         4),
+    (b'x*window_get_width()/800',            b'x+0*window_get_width()',           1),
+    (b'(y+l_ysize)*window_get_height()/609', b'(y+l_ysize)+0*window_get_height()', 1),
+)
+
 # GM's "display error messages" flag, in the SETTINGS block — which lives in the
 # plain, unencrypted part of the exe, before the resource tree. Stock BSF ships
 # with it on, and because GMZ.dll is in no distribution, every start throws a pile
@@ -72,10 +106,37 @@ MARKER = b'execute_file("mods/init.gml")'   # how we recognise our own work
 # the dialogs are pure noise. `error_log` stays on, so errors still land in
 # game_errors.log — which is where a modder should look when their init.gml is
 # wrong.
-ERROR_DISPLAY_OFF = 0x1efa68
-# Sanity fingerprint: error_display, error_log, error_abort, uninitialized_zero,
-# then the 43-entry constants block.
-ERROR_FLAGS_EXPECTED = (1, 1, 0, 0, 43)
+#
+# ShipMaker has no GMZ extension (or any extension) and starts clean, so its
+# entry leaves the flag alone: an editor throwing a REAL error should say so.
+#
+# The fingerprint is error_display, error_log, error_abort, uninitialized_zero,
+# then the constants-block entry count.
+
+#: Per-build patch recipes, keyed by sha256_build() digest. `error_off` of None
+#: means "leave the error-dialog flag alone".
+KNOWN = {
+    '0a393a0a46c410d87c003bdda8a58fbd777e5f1844a4de0c04d8acb53dede551': {
+        'name': 'v0.90d',
+        'anchor': ANCHOR,
+        'bootstrap': BOOTSTRAP,
+        'marker': MARKER,
+        'error_off': 0x1efa68,
+        'error_expect': (1, 1, 0, 0, 43),
+        'edits': (),
+        'shipmaker': False,
+    },
+    '3d5932fbab07099ef7662391fec47c3934e3367f9106d4e16b7ca2e20479e6c8': {
+        'name': 'ShipMaker v0.90d',
+        'anchor': SM_ANCHOR,
+        'bootstrap': SM_BOOTSTRAP,
+        'marker': SM_MARKER,
+        'error_off': None,
+        'error_expect': None,
+        'edits': SM_MENU_EDITS,
+        'shipmaker': True,
+    },
+}
 
 
 def sha256_build(path):
@@ -134,6 +195,41 @@ def cursor_step(exe, install=True):
     print('  disable at any time by deleting mods/cursor.on (no repatch needed)')
 
 
+#: The ShipMaker modules this patcher installs next to the exe. sm.gml is the
+#: entry point the bootstrap runs (kept if the user edited it); smres.gml is a
+#: module and is refreshed on every run.
+SM_MODULES = (('sm.gml', False), ('smres.gml', True))
+
+
+def sm_mods_step(exe):
+    """Install mods/sm.gml + mods/smres.gml next to ShipMaker.exe.
+
+    Searched the same way cursorfix finds its pieces: the checkout this script
+    runs from, or the PyInstaller unpack dir when frozen.
+    """
+    here = os.path.dirname(os.path.abspath(__file__))
+    roots = [os.path.dirname(here), here, os.getcwd()]
+    if getattr(sys, 'frozen', False):
+        roots.insert(0, getattr(sys, '_MEIPASS', here))
+
+    mods = os.path.join(os.path.dirname(os.path.abspath(exe)), 'mods')
+    os.makedirs(mods, exist_ok=True)
+    for name, overwrite in SM_MODULES:
+        src = next((p for r in roots
+                    for p in (os.path.join(r, 'mods', name),)
+                    if os.path.exists(p)), None)
+        if src is None:
+            sys.exit(f'ShipMaker modules: no mods/{name} in this checkout')
+        dst = os.path.join(mods, name)
+        if os.path.exists(dst) and not overwrite:
+            print(f'ShipMaker modules: mods/{name} already present — kept')
+            continue
+        shutil.copy2(src, dst)
+        print(f'ShipMaker modules: installed mods/{name}')
+    print('  resize behaviour: region follows the window 1:1; opt out by '
+          'creating mods/smres.off')
+
+
 def revert(exe):
     bak = exe + '.bak'
     if not os.path.exists(bak):
@@ -166,19 +262,23 @@ def main():
     if '--cursor-only' in sys.argv:
         return cursor_step(exe)
 
-    mod_loader(exe, keep_errors='--keep-errors' in sys.argv)
+    build = mod_loader(exe, keep_errors='--keep-errors' in sys.argv)
     if '--no-hwvp' not in sys.argv:
         hwvp_step(exe)
+    if build and build['shipmaker']:
+        sm_mods_step(exe)
     # Last: it needs mods/init.gml, which mod_loader() creates the folder for.
     if '--no-cursor' not in sys.argv:
         cursor_step(exe)
 
 
 def mod_loader(exe, keep_errors=False):
+    """Inject the bootstrap (and the build's extra tree edits). Returns the
+    build recipe that applies to this exe, or None if it could not be told."""
     digest = sha256_build(exe)
-    known = digest in KNOWN
-    if known:
-        print(f'{os.path.basename(exe)}: recognised {KNOWN[digest]}')
+    build = KNOWN.get(digest)
+    if build:
+        print(f'{os.path.basename(exe)}: recognised {build["name"]}')
 
     raw, (pos, clen, blob) = gm7.load(exe)
     tail = raw[pos + 4 + clen:]          # anything after the tree, preserved verbatim
@@ -186,53 +286,85 @@ def mod_loader(exe, keep_errors=False):
 
     # Check for our own marker BEFORE rejecting on hash: a patched exe necessarily
     # has an unknown hash, and "unrecognised build" is an alarming way to tell
-    # someone they simply ran the patcher twice.
-    if plain.count(MARKER):
-        # Return rather than exit: the HWVP step is independent and must still run
-        # (and report) when the mod loader is already in place.
-        print('mod loader: already patched — nothing to do.\n'
-              '  Edit mods/init.gml to change your mod (no repatch needed), '
-              'or run with --revert to restore.')
-        return
-    if not known:
+    # someone they simply ran the patcher twice. Each build has its own marker,
+    # which is also how a patched exe's build is identified.
+    for b in KNOWN.values():
+        if plain.count(b['marker']):
+            # Return rather than exit: the HWVP step is independent and must
+            # still run (and report) when the mod loader is already in place.
+            entry = b['bootstrap'].split(b'"')[1].decode()
+            print(f'mod loader: already patched ({b["name"]}) — nothing to do.\n'
+                  f'  Edit {entry} to change your mod (no repatch needed), '
+                  'or run with --revert to restore.')
+            return b
+    if not build:
         sys.exit(f'unrecognised build (sha256 {digest}).\n'
-                 'This patcher only knows BSF v0.90d; refusing to touch it.')
+                 'This patcher only knows BSF v0.90d (game and ShipMaker); '
+                 'refusing to touch it.')
 
     print(f'tree @ {pos:#x} clen={clen} inflated={len(blob)} trailing={len(tail)}B')
-    n = plain.count(ANCHOR)
+
+    # Every edit is a same-length span replacement: (offset, new bytes). The
+    # bootstrap goes over the anchor comment; a build's extra edits are content-
+    # matched with an exact expected count, so a foreign or drifted tree refuses
+    # rather than half-patching.
+    anchor, bootstrap = build['anchor'], build['bootstrap']
+    n = plain.count(anchor)
     if n != 1:
         sys.exit(f'anchor found {n} times, expected exactly 1; refusing')
+    assert len(bootstrap) <= len(anchor)
+    at = plain.find(anchor)
+    spans = [(at, bootstrap.ljust(len(anchor)))]
+    print(f'anchor at plain[{at}]; injecting {len(bootstrap)}B bootstrap '
+          f'({len(anchor)}B slot)')
 
-    payload = BOOTSTRAP.ljust(len(ANCHOR))     # same length: no length fields move
-    assert len(payload) == len(ANCHOR)
-    at = plain.find(ANCHOR)
-    print(f'anchor at plain[{at}]; injecting {len(BOOTSTRAP)}B bootstrap '
-          f'({len(ANCHOR)}B slot)')
+    for old, new, expect in build['edits']:
+        c = plain.count(old)
+        if c != expect:
+            sys.exit(f'expression {old.decode()!r} found {c} times, expected '
+                     f'{expect}; refusing')
+        assert len(new) <= len(old)
+        start = 0
+        while True:
+            hit = plain.find(old, start)
+            if hit < 0:
+                break
+            spans.append((hit, new.ljust(len(old))))
+            start = hit + len(old)
+    if build['edits']:
+        print(f'{len(spans) - 1} hardcoded-resolution expressions rewritten '
+              'for the 1:1 region model')
 
-    patched_plain = plain[:at] + payload + plain[at + len(ANCHOR):]
+    buf = bytearray(plain)
+    for off, data in spans:
+        buf[off:off + len(data)] = data
+    patched_plain = bytes(buf)
 
-    # Re-encrypt only the span we touched; everything else stays byte-identical.
-    idx = at - swap_start
-    enc = gm7.encrypt_bytes(payload, seed, swap_offset, idx, len(payload))
-    new_blob = blob[:swap_offset + idx] + enc + blob[swap_offset + idx + len(enc):]
+    # Re-encrypt only the spans we touched; everything else stays byte-identical.
+    new_blob = bytearray(blob)
+    for off, data in spans:
+        idx = off - swap_start
+        enc = gm7.encrypt_bytes(data, seed, swap_offset, idx, len(data))
+        new_blob[swap_offset + idx: swap_offset + idx + len(enc)] = enc
     assert len(new_blob) == len(blob)
 
     # Sanity: it must decrypt back to what we intended.
-    check, *_ = gm7.gmkrypt_decrypt(new_blob)
+    check, *_ = gm7.gmkrypt_decrypt(bytes(new_blob))
     if check != patched_plain:
         sys.exit('re-encryption did not round-trip; aborting without writing')
     print('verified: re-encrypted tree decrypts to the patched text')
 
-    comp = zlib.compress(new_blob, 9)
+    comp = zlib.compress(bytes(new_blob), 9)
     out = bytearray(raw[:pos] + struct.pack('<I', len(comp)) + comp + tail)
 
-    # Silence the stock startup error dialogs, unless asked not to.
-    if not keep_errors:
-        got = struct.unpack_from('<5I', out, ERROR_DISPLAY_OFF)
-        if got != ERROR_FLAGS_EXPECTED:
-            sys.exit(f'settings fingerprint mismatch at {ERROR_DISPLAY_OFF:#x}: '
-                     f'{got} != {ERROR_FLAGS_EXPECTED}; refusing to touch it')
-        struct.pack_into('<I', out, ERROR_DISPLAY_OFF, 0)
+    # Silence the stock startup error dialogs, unless asked not to (or the build
+    # has none to silence — ShipMaker).
+    if build['error_off'] is not None and not keep_errors:
+        got = struct.unpack_from('<5I', out, build['error_off'])
+        if got != build['error_expect']:
+            sys.exit(f'settings fingerprint mismatch at {build["error_off"]:#x}: '
+                     f'{got} != {build["error_expect"]}; refusing to touch it')
+        struct.pack_into('<I', out, build['error_off'], 0)
         print('error dialogs disabled (errors still go to game_errors.log)')
 
     bak = exe + '.bak'
@@ -245,7 +377,9 @@ def mod_loader(exe, keep_errors=False):
 
     mods = os.path.join(os.path.dirname(os.path.abspath(exe)), 'mods')
     os.makedirs(mods, exist_ok=True)
-    print(f'drop your GML in {os.path.join(mods, "init.gml")}')
+    entry = bootstrap.split(b'"')[1].decode()
+    print(f'drop your GML in {os.path.join(os.path.dirname(mods), entry)}')
+    return build
 
 
 if __name__ == '__main__':

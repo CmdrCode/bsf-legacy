@@ -130,7 +130,9 @@ object_event_add(ui, 7, 11,
     // black-screen flicker, and other windows keep their positions. This is what
     // stock BSF gets wrong: its Fullscreen button changes the DESKTOP mode to
     // 1024x768 (or 1280x960 for "Widescreen", which is 4:3 anyway).
-    'window_set_fullscreen(global.mod_fullscreen);' +
+    // The apply itself lives on the nav watchdog -- see (c) below for why it is
+    // a borderless screen-sized WINDOW rather than GM fullscreen.
+    'global.mod_fs_apply = 1;' +
     'var f;' +
     'f = file_text_open_write("mods/mode.cfg");' +
     'file_text_write_string(f, string(global.mod_fullscreen)); file_text_writeln(f);' +
@@ -219,18 +221,55 @@ object_event_add(nav, 3, 1,
     '  room_goto(global.mod_opt_room);' +
     '}');
 
+// (c) Display-mode owner. "Fullscreen" here is a borderless WINDOW sized
+//     exactly to the monitor, never GM's own fullscreen state:
+//     * GM fullscreen ignores window_set_size, so once a window manager has
+//       meddled with the window there is no way to take the size back. And
+//       meddle it does -- without a wine virtual desktop, GNOME maps the
+//       screen-sized popup into its WORK AREA, 32px short of the top bar,
+//       which shows as a bare strip where a title bar would sit.
+//     * A plain undecorated window that exactly matches the monitor is the
+//       one shape wine tags _NET_WM_STATE_FULLSCREEN, and covering the panels
+//       for such a window is a state request every WM honours.
+//     The watchdog re-asserts when the size drifts from the display (a WM can
+//     shrink the window at map time, before the state is granted); the
+//     cooldown keeps a WM that keeps refusing from being spammed, and once
+//     the state is granted the condition goes quiet.
+object_event_add(nav, 0, 0, 'fs_cool = 0;');
+object_event_add(nav, 3, 1,
+    'if (global.mod_fs_apply || (global.mod_fullscreen && fs_cool <= 0' +
+    '    && (window_get_width()  != display_get_width()' +
+    '     || window_get_height() != display_get_height()' +
+    '     || window_get_x() != 0 || window_get_y() != 0))) {' +
+    '  global.mod_fs_apply = 0; fs_cool = 60;' +
+    '  if (global.mod_fullscreen) {' +
+    '    window_set_fullscreen(0);' +
+    '    window_set_showborder(0);' +
+    '    window_set_size(display_get_width(), display_get_height());' +
+    '    window_set_position(0, 0);' +
+    '  } else {' +
+    '    window_set_showborder(1);' +
+    '    window_set_size(window_get_region_width(), window_get_region_height());' +
+    '    window_center();' +
+    '  }' +
+    '}' +
+    'if (fs_cool > 0) fs_cool -= 1;');
+
 i = instance_create(0, 0, nav);
 i.persistent = true;
 
 // Display mode is ours, so it needs its own persistence; every other setting on
 // this screen is stock and already round-trips through bfconfig.ini.
+// With no mode.cfg nothing is applied at all: the window stays exactly as the
+// game made it until the player first touches the Display row.
 global.mod_fullscreen = 0;
+global.mod_fs_apply = 0;
 if (file_exists('mods/mode.cfg')) {
     var g;
     g = file_text_open_read('mods/mode.cfg');
     global.mod_fullscreen = real(file_text_read_string(g));
     file_text_close(g);
-    window_set_fullscreen(global.mod_fullscreen);
+    global.mod_fs_apply = 1;
 }
 
 // ---------------------------------------------------------------------- note
