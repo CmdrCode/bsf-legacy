@@ -12,6 +12,8 @@ the patcher edits it in place, and everything can be switched back off. The orig
 download links are long gone; [this Internet Archive capture](https://web.archive.org/web/20140322015221/http://www.wyrdysm.com/battleshipsforever/battleshipsforeverv090d.zip)
 seems to be the last copy of v0.90d still online.
 
+https://github.com/user-attachments/assets/36530b08-6ba3-4629-95e8-358479b19e0f
+
 ## How it works
 
 The patcher makes one small edit to the game's startup code: a bootstrap that runs
@@ -133,7 +135,7 @@ python3 tools/patch_bsf.py <exe> --hwvp-only       # just the two bytes, no mod 
 Battleships Forever is the work of **Sean "th15" Chan** and Wyrdysm Games. The game is
 freeware, but its code, art and ship designs remain his. Nothing in this repository is
 derived from or redistributes any of it — a fresh clone works as-is, with no extraction
-step — and the in-game credit line is preserved exactly as written.
+step.
 
 ## Licence
 
