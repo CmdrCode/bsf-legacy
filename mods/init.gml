@@ -165,8 +165,9 @@ nm[12]='guidump';    mk[12]='guidump.on';   // menu inventory, diagnostics only
 nm[13]='logo';       mk[13]='logo.on';      // MUST precede legacy: CLEARS GUI_MainTitle's Draw
 nm[14]='legacy';     mk[14]='legacy.on';    // appends one Draw to GUI_MainTitle
 nm[15]='crisp';      mk[15]='crisp.on';     // menu label sprites -> drawn text
-nm[16]='roomtest';   mk[16]='';             // LAST: probes for functions that may not exist, and a
-last = 16;                                  // missing one silently aborts the rest of the file it is in
+nm[16]='act2';       mk[16]='!act2.off';    // Act II campaign: paged career menu + episodes (chains act2m1.gml)
+nm[17]='roomtest';   mk[17]='';             // LAST: probes for functions that may not exist, and a
+last = 17;                                  // missing one silently aborts the rest of the file it is in
 
 for (k = 0; k <= last; k += 1) {
     if (mk[k] == '')

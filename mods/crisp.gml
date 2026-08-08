@@ -124,9 +124,15 @@ object_event_add(ctr_MainMenu, 8, 0,
     '}' +
 
     'if (lbl == "") {' +
-    // Unknown sprite: stock behaviour, unchanged.
-    ' draw_sprite_ext(sprite_index, image_index, x, y, image_xscale, image_yscale,' +
-    '  image_angle, image_blend, image_alpha);' +
+    // Unknown sprite: stock behaviour, unchanged — but guard the blank case.
+    // A button that was born with sprite_index = -1 (act2.gml's Act II slots
+    // carry only a mask and draw their labels themselves) must not reach
+    // draw_sprite_ext(-1, ...): despite the header note above, the runner
+    // throws "Trying to draw non-existing sprite" for it, once per frame.
+    ' if (sprite_index >= 0) {' +
+    '  draw_sprite_ext(sprite_index, image_index, x, y, image_xscale, image_yscale,' +
+    '   image_angle, image_blend, image_alpha);' +
+    ' }' +
     '} else {' +
     // Blank the sprite so a child that blits its own label draws nothing, and
     // keep the original as the collision mask so hit-testing is untouched.
