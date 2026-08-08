@@ -54,6 +54,8 @@ cursor cache is a native DLL that hooks a Windows API import.
 * A Factorio-style part picker: a paged quickbar, a hand that keeps placing, `Q` pipette, and an `E` searchable inventory of every part.
 * Fixed mouse-cursor issues that broke part-dragging under Linux/wine.
 
+https://github.com/user-attachments/assets/72e70ac7-94cd-4c5a-8998-53b53cf1a9a7
+
 **Faster under wine** — BSF is far slower under wine than it should be, for reasons that are
 wine's, not the game's. These help both the game and the editor:
 
