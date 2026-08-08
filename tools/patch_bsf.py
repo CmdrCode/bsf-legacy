@@ -196,9 +196,10 @@ def cursor_step(exe, install=True):
 
 
 #: The ShipMaker modules this patcher installs next to the exe. sm.gml is the
-#: entry point the bootstrap runs (kept if the user edited it); smres.gml is a
-#: module and is refreshed on every run.
-SM_MODULES = (('sm.gml', False), ('smres.gml', True))
+#: entry point the bootstrap runs (kept if the user edited it); the rest are
+#: modules and are refreshed on every run.
+SM_MODULES = (('sm.gml', False), ('smres.gml', True), ('mipdraw.gml', True),
+              ('smpick.gml', True))
 
 
 def sm_mods_step(exe):
@@ -228,6 +229,8 @@ def sm_mods_step(exe):
         print(f'ShipMaker modules: installed mods/{name}')
     print('  resize behaviour: region follows the window 1:1; opt out by '
           'creating mods/smres.off')
+    print('  part picker: Factorio-style quickbar + inventory; opt out by '
+          'creating mods/smpick.off')
 
 
 def revert(exe):

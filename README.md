@@ -49,6 +49,18 @@ cursor cache is a native DLL that hooks a Windows API import.
   region follows the window, so a bigger window is more crisp canvas, not bigger blur. The
   window size is remembered between sessions, and the ship being edited survives every
   resize. Below 1016×704 it falls back to the stock stretch so the UI never clips.
+* **The Ship Maker gets a Factorio-style part picker.** A quickbar above the canvas bottom
+  edge holds 10 pages × 10 slots of *links* to parts (sections, weapons, modules, doodads):
+  digits `1–0` pick a link into the hand (same digit returns it), `X` rotates pages,
+  `Shift+digit` jumps a page to the top, and left-click places the held part at the cursor —
+  the hand persists for repeat placement. `Q` is the pipette: over any placed part it grabs
+  that part type; with a full hand it empties it. `E` (or the grid button at the bar's
+  end) opens a searchable inventory of every palette part — type to filter, category chips, arrows +
+  Enter or click to pick. Click an empty slot with an empty hand to choose its link from the
+  same screen; right- or middle-click a slot clears it. The layout persists in
+  `mods/smpick.cfg` and survives undo, preview and "New ship". While the mod is on it takes
+  over plain/Shift digits `1–4`, tap-`X`, `E`, and `Q`-over-parts (`Ctrl+digit` still cycles
+  the stock sidebar; everything returns to stock with `mods/smpick.off`).
 
 **Linux/wine only** — BSF is far slower under wine than it should be, for reasons that are
 wine's, not the game's:
@@ -93,6 +105,7 @@ The cursor cache additionally needs `bsfnat.dll`, cross-compiled with mingw-w64 
 | `crisp.gml`, `logo.gml`, `legacy.gml`, `cursor.gml` | delete the matching `mods/*.on` marker |
 | `fastdraw.gml` (the draw cull) | create `mods/fastdraw.off` — it is opt-*out* |
 | `smres.gml` (ShipMaker 1:1 resolution) | create `mods/smres.off` — it is opt-*out* |
+| `smpick.gml` (ShipMaker part picker) | create `mods/smpick.off` — it is opt-*out* |
 | `resolution.gml`, `options.gml`, `aspect.gml`, `widescreen.gml` | rename or delete the `.gml` itself |
 | the HWVP bytes | `--revert-hwvp` |
 | the mod loader + error-dialog flag | `--revert` (restores the `.bak`) |
