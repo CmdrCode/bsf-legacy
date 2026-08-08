@@ -34,8 +34,10 @@ global.bsf_sm_init = 1;
 //     "!x.off"    unless mods/x.off exists              (opt-out; on by default)
 var nm, mk, k, gate, last;
 nm[0]='smres';  mk[0]='!smres.off';  // 1:1 resolution: the region follows the window
-nm[1]='cursor'; mk[1]='cursor.on';   // cursor cache over the GetCursorPos import
-last = 1;
+nm[1]='smpan';  mk[1]='!smpan.off';  // middle-mouse drag pan, replacing the release-teleport
+nm[2]='smzoom'; mk[2]='!smzoom.off'; // zoom % readout at the canvas bottom-right
+nm[3]='cursor'; mk[3]='cursor.on';   // cursor cache over the GetCursorPos import
+last = 3;
 
 for (k = 0; k <= last; k += 1) {
     if (mk[k] == '')

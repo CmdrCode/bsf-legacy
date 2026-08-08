@@ -243,7 +243,15 @@ def sm_mods_step(exe):
 #     Wine Mono or Gecko (GM 7.0 needs neither);
 #   * no WINEARCH, so it works on both multiarch and new-wow64 wine builds;
 #   * no wine virtual desktop -- the mod's fullscreen is a borderless window,
-#     which killed the display-mode changes that made desktops necessary.
+#     which killed the display-mode changes that made desktops necessary;
+#   * UseXRandR=N in the prefix -- on a clean exit wine tears the D3D device
+#     down and re-enumerates the displays, and on multi-monitor NVIDIA that
+#     re-enumeration triggers a full modeset (every monitor blanks for a few
+#     seconds). Nothing here needs XRandR -- the render is a borderless window
+#     that never changes the display mode -- so turning it off is pure upside.
+#     Measured: the editor's game_end() fired 30 RRScreenChangeNotify events
+#     without it, zero with it; a hard kill (which skips the teardown) fired
+#     none either way, which is what pinned the cause to the clean shutdown.
 # @EXE@ / @STEM@ are substituted at write time.
 LAUNCHER = '''#!/bin/sh
 # @EXE@ under wine -- written by the BSF-Legacy patcher (Linux only).
@@ -281,6 +289,18 @@ if [ ! -d "$WINEPREFIX" ]; then
     echo "First run: creating a private wine prefix (about ten seconds)..."
     mkdir -p "$WINEPREFIX"
     wineboot >/dev/null 2>&1
+fi
+
+# Stop wine from driving XRandR: a clean exit tears the D3D device down and
+# re-enumerates the displays, which on multi-monitor NVIDIA triggers a full
+# modeset -- every monitor blanks for a few seconds. The render is a borderless
+# window that never changes the display mode, so nothing here needs XRandR.
+# Applied once and marked, so later launches skip the extra wine call; the
+# marker also carries the fix into a prefix created before this was added.
+if [ ! -f "$WINEPREFIX/.bsf-no-xrandr" ]; then
+    if wine reg add "HKCU\\Software\\Wine\\X11 Driver" /v UseXRandR /d N /f >/dev/null 2>&1; then
+        touch "$WINEPREFIX/.bsf-no-xrandr"
+    fi
 fi
 
 LOG="$WINEPREFIX/@STEM@.log"
