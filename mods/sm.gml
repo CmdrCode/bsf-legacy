@@ -34,10 +34,12 @@ global.bsf_sm_init = 1;
 //     "!x.off"    unless mods/x.off exists              (opt-out; on by default)
 var nm, mk, k, gate, last;
 nm[0]='smres';   mk[0]='!smres.off';  // 1:1 resolution: the region follows the window
-nm[1]='mipdraw'; mk[1]='';            // mip-filtered sprite drawing library (smpick uses it)
-nm[2]='smpick';  mk[2]='!smpick.off'; // Factorio-style part picker: quickbar + pipette + search
-nm[3]='cursor';  mk[3]='cursor.on';   // cursor cache over the GetCursorPos import
-last = 3;
+nm[1]='smpan';   mk[1]='!smpan.off';  // middle-mouse drag pan, replacing the release-teleport
+nm[2]='smzoom';  mk[2]='!smzoom.off'; // zoom % readout at the canvas bottom-right
+nm[3]='mipdraw'; mk[3]='';            // mip-filtered sprite drawing library (smpick uses it)
+nm[4]='smpick';  mk[4]='!smpick.off'; // Factorio-style part picker: quickbar + pipette + search
+nm[5]='cursor';  mk[5]='cursor.on';   // cursor cache over the GetCursorPos import
+last = 5;
 
 for (k = 0; k <= last; k += 1) {
     if (mk[k] == '')

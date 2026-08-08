@@ -177,7 +177,7 @@ def main():
         print('%s not found next to the game -- skipping the ship editor' % SM_NAME)
 
     if '--uninstall' in flags:
-        patch_bsf.revert(exe)
+        patch_bsf.revert(exe)                    # also removes the Linux launcher
         hwvp.revert(exe)
         if sm and os.path.exists(sm + '.bak'):
             patch_bsf.revert(sm)
@@ -196,11 +196,13 @@ def main():
     print('\npatching executable...')
     patch_bsf.mod_loader(exe)
     patch_bsf.hwvp_step(exe)
+    patch_bsf.launcher_step(exe)                 # Linux only; no-op on Windows
 
     if sm:
         print('\npatching ship editor...')
         patch_bsf.mod_loader(sm)
         patch_bsf.hwvp_step(sm)
+        patch_bsf.launcher_step(sm)
 
     print('\nDone. Launch the game as usual.')
     print('Each module is a marker file in mods/ -- delete one to turn it off.')

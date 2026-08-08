@@ -12,6 +12,8 @@ the patcher edits it in place, and everything can be switched back off. The orig
 download links are long gone; [this Internet Archive capture](https://web.archive.org/web/20140322015221/http://www.wyrdysm.com/battleshipsforever/battleshipsforeverv090d.zip)
 seems to be the last copy of v0.90d still online.
 
+https://github.com/user-attachments/assets/36530b08-6ba3-4629-95e8-358479b19e0f
+
 ## How it works
 
 The patcher makes one small edit to the game's startup code: a bootstrap that runs
@@ -29,7 +31,7 @@ cursor cache is a native DLL that hooks a Windows API import.
 
 ## What it changes
 
-**Everywhere — Windows and Linux alike**
+**The game**
 
 * True widescreen support. Any aspect ratio without stretching; the camera, zoom and main
   menu all adapt. (Stock "Widescreen" was 1280×960 — that's 4:3.)
@@ -44,39 +46,22 @@ cursor cache is a native DLL that hooks a Windows API import.
   1024×768 bitmaps.
 * No more "Error defining an external function" dialogs on every launch.
 * Off-screen sections, turrets and doodads skip their draw — worth a few ms in big battles.
-* **The Ship Maker renders 1:1 at any window size.** Stock ShipMaker has a resizable window
-  wrapped around a fixed 1016×704 canvas that just gets stretched; patched, the drawing
-  region follows the window, so a bigger window is more crisp canvas, not bigger blur. The
-  window size is remembered between sessions, and the ship being edited survives every
-  resize. Below 1016×704 it falls back to the stock stretch so the UI never clips.
-* **The Ship Maker gets a Factorio-style part picker.** A quickbar above the canvas bottom
-  edge holds 10 pages × 10 slots of *links* to parts (sections, weapons, modules, doodads):
-  digits `1–0` pick a link into the hand (same digit returns it), `X` rotates pages,
-  `Shift+digit` jumps a page to the top, and left-click places the held part at the cursor —
-  the hand persists for repeat placement. `Q` is the pipette: over any placed part it grabs
-  that part type; with a full hand it empties it. `E` (or the grid button at the bar's
-  end) opens a searchable inventory of every palette part — type to filter, category chips, arrows +
-  Enter or click to pick. Click an empty slot with an empty hand to choose its link from the
-  same screen; right- or middle-click a slot clears it. The layout persists in
-  `mods/smpick.cfg` and survives undo, preview and "New ship". While the mod is on it takes
-  over plain/Shift digits `1–4`, tap-`X`, `E`, and `Q`-over-parts (`Ctrl+digit` still cycles
-  the stock sidebar; everything returns to stock with `mods/smpick.off`).
 
-**Linux/wine only** — BSF is far slower under wine than it should be, for reasons that are
-wine's, not the game's:
+**The Ship Maker**
+
+* Renders 1:1 at any window size instead of stretching a fixed 1016×704 canvas.
+* Middle-mouse drag pan (stock teleports the canvas to the click point), with a live zoom % readout.
+* A Factorio-style part picker: a paged quickbar, a hand that keeps placing, `Q` pipette, and an `E` searchable inventory of every part.
+* Fixed mouse-cursor issues that broke part-dragging under Linux/wine.
+
+**Faster under wine** — BSF is far slower under wine than it should be, for reasons that are
+wine's, not the game's. These help both the game and the editor:
 
 * HWVP — two bytes in the exe flip Direct3D 8 from software to hardware vertex processing.
   15 → 27 fps under wine, near-nothing on Windows, and provably no visual change.
 * Cursor cache — hooks the `GetCursorPos` import and serves ~160 reads a frame from a cache.
   `mouse_x` costs 176 µs a read under wine; this buys ~13 ms a frame. Cheap on Windows, so
   the Windows installer leaves it out.
-* The cursor cache also hooks `SetCursorPos`, which un-breaks dragging in the Ship Maker.
-  Its drag code warps the cursor to the window centre every step and immediately reads it
-  back — under wine that read-back is stale for the rest of the frame, so most of a drag
-  gets silently undone and new parts teleport off-screen (this is broken in the *stock*
-  game under wine, resolution mod or not; measured: only a third of the mouse motion
-  survived). Stamping the cache with the warped position on every `SetCursorPos` makes the
-  read-back exact.
 
 ## Install
 
@@ -95,6 +80,14 @@ python3 tools/patch_bsf.py /path/to/BattleshipsForever/ShipMaker.exe   # the edi
 
 The Windows installer patches both automatically when `ShipMaker.exe` is present.
 
+On Linux the patcher also drops `BattleshipsForever_Linux.sh` and `ShipMaker_Linux.sh`
+next to the exes — from then on those are how you play: each runs its exe under wine
+in a private prefix (`~/.local/share/bsf-legacy`), created automatically on the first
+run in about ten seconds. No winetricks, no wine configuration, nothing outside that
+folder; wine itself comes from your distro (`sudo apt install wine` or equivalent),
+and the script tells you exactly what to install if it is missing. `--revert`
+removes the launcher again.
+
 The cursor cache additionally needs `bsfnat.dll`, cross-compiled with mingw-w64 via
 `tools/build.sh`; skip it with `--no-cursor` and everything else still works.
 
@@ -105,6 +98,8 @@ The cursor cache additionally needs `bsfnat.dll`, cross-compiled with mingw-w64 
 | `crisp.gml`, `logo.gml`, `legacy.gml`, `cursor.gml` | delete the matching `mods/*.on` marker |
 | `fastdraw.gml` (the draw cull) | create `mods/fastdraw.off` — it is opt-*out* |
 | `smres.gml` (ShipMaker 1:1 resolution) | create `mods/smres.off` — it is opt-*out* |
+| `smpan.gml` (ShipMaker middle-mouse drag pan) | create `mods/smpan.off` — it is opt-*out* |
+| `smzoom.gml` (ShipMaker zoom % readout) | create `mods/smzoom.off` — it is opt-*out* |
 | `smpick.gml` (ShipMaker part picker) | create `mods/smpick.off` — it is opt-*out* |
 | `resolution.gml`, `options.gml`, `aspect.gml`, `widescreen.gml` | rename or delete the `.gml` itself |
 | the HWVP bytes | `--revert-hwvp` |
@@ -142,7 +137,7 @@ python3 tools/patch_bsf.py <exe> --hwvp-only       # just the two bytes, no mod 
 Battleships Forever is the work of **Sean "th15" Chan** and Wyrdysm Games. The game is
 freeware, but its code, art and ship designs remain his. Nothing in this repository is
 derived from or redistributes any of it — a fresh clone works as-is, with no extraction
-step — and the in-game credit line is preserved exactly as written.
+step.
 
 ## Licence
 
