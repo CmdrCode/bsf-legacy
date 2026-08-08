@@ -58,6 +58,7 @@ jobs:
           --paths tools
           --hidden-import patch_bsf
           --hidden-import hwvp
+          --hidden-import dplay
           --hidden-import cursorfix
           --hidden-import gm7
           tools/install.py
