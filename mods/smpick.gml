@@ -17,9 +17,50 @@
 // dead across 9 cleared presses and fired again with capture disabled, and
 // keyboard_string still accumulates past cleared keys. Taken while the mod is
 // on: plain digits 1-0 (stock 1-4 place/cycle the sidebar part), Shift+digits,
-// tap-X (stock X is only a held wheel modifier -- never cleared while a wheel
-// could be turning, only on tap frames), and Esc only when the hand is full.
-// Ctrl+digit passes through to stock cycling.
+// and Esc only when the hand is full. Ctrl+digit passes through to stock
+// cycling.
+//
+// X is the exception: it is NEVER cleared. It has to survive as a held
+// modifier (stock reads keyboard_check(ord('X')) to rotate by rotxstep on a
+// wheel tick, and the ghost does the same below), and keyboard_clear kills
+// keyboard_check for the rest of the hold, not just for the frame. Measured
+// on this runner 2026-08-08: with the old clear-on-press, keyboard_check(88)
+// read 0 for the entire time X was physically down -- so the clear had
+// silently broken stock's X+wheel rotate -- while Windows auto-repeat kept
+// re-firing keyboard_check_pressed, cycling the quickbar page every few
+// frames for as long as X was held (toppage ran 1-6-9-4-7 across four
+// samples). X is now edge-tracked with keyboard_check and the page cycle
+// settles on RELEASE, cancelled if the wheel turned during the hold -- so a
+// tap pages and a hold modifies, which is what the key was always meant to do.
+//
+// ------------------------------------------------------------ hand transform
+// The hand carries a TRANSFORM (angle, x/y scale) and an optional COLOUR, and
+// the ghost draws with them -- so what you see at the cursor is what gets
+// placed. Stock's own rotate/flip keys drive it, taken ONLY while the hand is
+// full so an empty hand leaves stock untouched: L / J rotate by global.rotstep
+// (the End-key fine/normal step), Shift+L / Shift+J and , / . flip the two
+// axes. Ctrl+L / Ctrl+J pass through -- those are stock's rotate-the-GROUP
+// keys and mean nothing to a ghost.
+//
+// Hold V or X and turn the wheel and the ghost rotates too, by rotvstep /
+// rotxstep, exactly as those modifiers do on a placed part. A wheel tick
+// cannot be swallowed the way keyboard_clear swallows a key -- obj_sidebar
+// zooms and every selected part rotates off the same tick, in an instance
+// order nothing here controls -- so it is UNDONE instead, which needs no
+// ordering assumption at all: Begin Step snapshots the view rect and the
+// angle of every selected part just before the mouse events; the appended
+// obj_sidebar handler puts the view back in the same event (so the canvas
+// never visibly zooms); Step puts the angles back after every mouse event has
+// run, and turns the ghost instead. Shift+wheel is left alone -- that is
+// stock's depth shuffle, not a rotate.
+//
+// Emptying the hand (Esc, same-digit toggle, Q with a full hand) resets the
+// transform to identity, which is the way back to a square part. Picking a
+// different part KEEPS it -- laying a run of hull plate at one angle is the
+// case that matters. Q pipette REPLACES it with the source part's own
+// angle/scale/colour, so a pipetted ghost is a visual copy of what you
+// clicked. Per-part stats (HP, fire rate, effect params) are not copied --
+// that is stock Ctrl+C's job.
 //
 // ------------------------------------------------------------------- state
 // Durable state lives in a ds_grid because the stock undo (savestate() =
@@ -32,7 +73,11 @@
 // sprite resource name; lname = Custom sprites relpath, empty for embedded
 // sprites). Meta row 10: [0]=top page, [1]=hand cell, [2]=generation counter
 // that the per-instance sprite cache keys off, so a game_load that reverts
-// the cache arrays rebuilds them on the next Step.
+// the cache arrays rebuilds them on the next Step, [3]=hand angle,
+// [4]=hand xscale, [5]=hand yscale, [6]=hand colour (-1 = none),
+// [7]=hand colourmod (-2 = none, -1 = custom colour, 0-2 = team colour type).
+// The transform rides in the grid for the same reason the layout does: a
+// Ctrl+Z mid-placement must not silently un-rotate the thing at your cursor.
 //
 // The layout persists in mods/smpick.cfg (header + 100 cell lines), written
 // on every mutation, loaded at boot -- so it also survives "New ship"
@@ -67,6 +112,16 @@ for (c = 0; c <= 9; c += 1) {
 ds_grid_set(global.pp_grid, 0, 10, 0);      // top page
 ds_grid_set(global.pp_grid, 1, 10, '0||');  // hand
 ds_grid_set(global.pp_grid, 2, 10, 1);      // generation
+ds_grid_set(global.pp_grid, 3, 10, 0);      // hand angle
+ds_grid_set(global.pp_grid, 4, 10, 1);      // hand xscale
+ds_grid_set(global.pp_grid, 5, 10, 1);      // hand yscale
+ds_grid_set(global.pp_grid, 6, 10, -1);     // hand colour   (-1 = none)
+ds_grid_set(global.pp_grid, 7, 10, -2);     // hand colourmod (-2 = none)
+
+// instance id -> image_angle for every selected part, refilled each frame the
+// wheel-rotate is armed. A ds_map for the same reason the layout is a ds_grid:
+// game_load reverts the global, but to the id it had at boot, which is this one.
+global.pp_wrmap = ds_map_create();
 
 var m, i;
 m = object_add();
@@ -75,7 +130,8 @@ m = object_add();
 object_event_add(m, 0, 0,
     'tick = 0; repnow = 0; seeded = 0;' +
     'kdig = -1; kshift = 0; kx = 0; kesc = 0; kq = 0; kplace = 0;' +
-    'kmodal = 0; kenter = 0; knav = 0; kclick = 0;' +
+    'kmodal = 0; kenter = 0; knav = 0; kclick = 0; kxf = 0; kxfs = 0;' +
+    'xdown = 0; xpend = 0;' +
     'modal = 0; amode = 0; aslot = -1; apage = 0;' +
     'chip = 0; chiplast = -1; msel = 0; mscroll = 0; qlast = "##"; fcount = 0; hovt = -1;' +
     'catn = 0; justclosed = 0;' +
@@ -109,6 +165,10 @@ object_event_add(m, 0, 0,
 
 // ------------------------------------------------- Begin Step: key capture
 object_event_add(m, 3, 1,
+    // disarmed by default, and re-armed only at the bottom of this event --
+    // so every early exit below (capoff, modal, esel) also disarms, and the
+    // wheel handler can never restore a stale view rect
+    'global.pp_warm = 0;' +
     'if (file_exists("mods/capoff")) exit;' +
     // Modal open: assert the stock "text field focused" gate (suppresses every
     // esel-gated handler, digits included -- they flow into keyboard_string as
@@ -145,7 +205,14 @@ object_event_add(m, 3, 1,
     '    }' +
     '  }' +
     '}' +
-    'if (keyboard_check_pressed(88)) { kx = 1; keyboard_clear(88); }' +
+    // X: edge-tracked, never cleared (see the key-takeover note at the top).
+    // The page cycle is settled on release so a hold that turned the wheel
+    // pages nothing -- Step clears xpend the moment a tick is consumed.
+    'var xnow;' +
+    'xnow = keyboard_check(88);' +
+    'if (xnow) { if (!xdown) xpend = 1; }' +
+    'else { if (xdown) { if (xpend) kx = 1; xpend = 0; } }' +
+    'xdown = xnow;' +
     'if (keyboard_check_pressed(vk_escape)) {' +
     '  if (hand != "0||") { kesc = 1; keyboard_clear(vk_escape); }' +
     '}' +
@@ -161,6 +228,30 @@ object_event_add(m, 3, 1,
     '    if (global.pp_hcell != "") tk = 1;' +
     '  }' +
     '  if (tk) { kq = 1; keyboard_clear(81); }' +
+    '}' +
+    // Stock's rotate/flip keys, taken only while the hand is full -- with an
+    // empty hand every one of them reaches stock unchanged. Ctrl is stock's
+    // "do it to the whole group" modifier and has no ghost meaning, so those
+    // combinations are left alone. L/J = rotate (Shift flips instead), and
+    // , / . are the flip-only pair.
+    'if (hand != "0||") if (!keyboard_check(vk_control)) {' +
+    '  if (keyboard_check_pressed(76)) { kxf = 1; kxfs = keyboard_check(vk_shift); keyboard_clear(76); }' +
+    '  if (keyboard_check_pressed(74)) { kxf = 2; kxfs = keyboard_check(vk_shift); keyboard_clear(74); }' +
+    '  if (keyboard_check_pressed(188)) { kxf = 3; keyboard_clear(188); }' +
+    '  if (keyboard_check_pressed(190)) { kxf = 4; keyboard_clear(190); }' +
+    '}' +
+
+    // Arm the wheel rotate. Begin Step is the last thing that runs before the
+    // mouse events, so a snapshot taken here is the pre-tick state exactly.
+    'if (hand != "0||") if (!keyboard_check(vk_shift)) if (keyboard_check(86) || keyboard_check(88)) {' +
+    '  if (instance_exists(obj_sidebar)) {' +
+    '    global.pp_warm = 1;' +
+    '    global.pp_mz = obj_sidebar.l_zoom;' +
+    '    global.pp_mvx = view_xview[1]; global.pp_mvy = view_yview[1];' +
+    '    global.pp_mvw = view_wview[1]; global.pp_mvh = view_hview[1];' +
+    '    ds_map_clear(global.pp_wrmap);' +
+    '    with (obj_section_parent) if (selected) ds_map_add(global.pp_wrmap, id, image_angle);' +
+    '  }' +
     '}');
 
 // --------------------------------------------------------------- Step
@@ -232,6 +323,10 @@ object_event_add(m, 3, 0,
     '}' +
 
     // ------------------------------------------------------- captured keys
+    // Any wheel tick during an X hold means X was being used as a modifier --
+    // for the ghost when the hand is full, for stock's rotate when it is not.
+    // Either way it is not a tap, so the pending page cycle is dropped.
+    'if (global.pp_wany) { if (xdown) xpend = 0; global.pp_wany = 0; }' +
     'if (kx) {' +
     '  kx = 0;' +
     '  tp = (tp + 1) mod 10;' +
@@ -247,7 +342,7 @@ object_event_add(m, 3, 0,
     '  else {' +
     '    cell = ds_grid_get(global.pp_grid, kdig, tp);' +
     '    if (string_char_at(cell, 1) != "0") {' +
-    '      if (hand == cell) { hand = "0||"; lastact = "hand emptied"; }' +
+    '      if (hand == cell) { hand = "0||"; event_user(7); lastact = "hand emptied"; }' +
     '      else { hand = cell; lastact = "picked slot " + string(kdig + 1); }' +
     '      ds_grid_set(global.pp_grid, 1, 10, hand);' +
     '    }' +
@@ -256,8 +351,51 @@ object_event_add(m, 3, 0,
     '}' +
     'if (kesc) {' +
     '  kesc = 0;' +
-    '  hand = "0||"; ds_grid_set(global.pp_grid, 1, 10, hand);' +
+    '  hand = "0||"; ds_grid_set(global.pp_grid, 1, 10, hand); event_user(7);' +
     '  lastact = "hand emptied (esc)";' +
+    '}' +
+
+    // -------------------------------------------------- hand transform keys
+    // Rotation follows global.rotstep so the End-key fine/normal toggle means
+    // the same thing here as it does on a placed part. Flips negate the scale
+    // rather than adding 180 degrees -- that is what stock does, and it is
+    // what the .shp format records (xscale -1 with a negated angle).
+    'if (kxf > 0) {' +
+    '  var ha, hx, hy;' +
+    '  ha = ds_grid_get(global.pp_grid, 3, 10);' +
+    '  hx = ds_grid_get(global.pp_grid, 4, 10);' +
+    '  hy = ds_grid_get(global.pp_grid, 5, 10);' +
+    '  if (kxf == 1) { if (kxfs) hx = -hx; else ha = (ha - global.rotstep) mod 360; }' +
+    '  if (kxf == 2) { if (kxfs) hy = -hy; else ha = (ha + global.rotstep) mod 360; }' +
+    '  if (kxf == 3) hx = -hx;' +
+    '  if (kxf == 4) hy = -hy;' +
+    '  ds_grid_set(global.pp_grid, 3, 10, ha);' +
+    '  ds_grid_set(global.pp_grid, 4, 10, hx);' +
+    '  ds_grid_set(global.pp_grid, 5, 10, hy);' +
+    '  kxf = 0; kxfs = 0;' +
+    '  lastact = "hand xform a=" + string(ha) + " x=" + string(hx) + " y=" + string(hy);' +
+    '}' +
+
+    // V/X + wheel. Every mouse event for this frame has already run, so the
+    // stock rotate has happened and can be put back from the Begin Step
+    // snapshot. V wins a V+X hold, matching stock's if/else order.
+    'if (global.pp_wtick != 0) {' +
+    '  if (global.pp_warm) {' +
+    '    var wst, wha, wk, wn;' +
+    '    wst = global.rotxstep;' +
+    '    if (keyboard_check(86)) wst = global.rotvstep;' +
+    '    wha = ds_grid_get(global.pp_grid, 3, 10);' +
+    '    wha = (wha - wst * global.pp_wtick) mod 360;' +
+    '    ds_grid_set(global.pp_grid, 3, 10, wha);' +
+    '    wn = ds_map_size(global.pp_wrmap);' +
+    '    wk = ds_map_find_first(global.pp_wrmap);' +
+    '    repeat (wn) {' +
+    '      if (instance_exists(wk)) wk.image_angle = ds_map_find_value(global.pp_wrmap, wk);' +
+    '      wk = ds_map_find_next(global.pp_wrmap, wk);' +
+    '    }' +
+    '    lastact = "hand xform (wheel) a=" + string(wha);' +
+    '  }' +
+    '  global.pp_wtick = 0;' +
     '}' +
 
     // ------------------------------------------------------- Q pipette
@@ -268,14 +406,21 @@ object_event_add(m, 3, 0,
     'if (kq) {' +
     '  kq = 0;' +
     '  if (hand != "0||") {' +
-    '    hand = "0||"; ds_grid_set(global.pp_grid, 1, 10, hand);' +
+    '    hand = "0||"; ds_grid_set(global.pp_grid, 1, 10, hand); event_user(7);' +
     '    lastact = "pipette: hand emptied";' +
     '  }' +
     '  else {' +
     '    event_user(4);' +
     '    if (global.pp_hcell != "") {' +
     '      hand = global.pp_hcell; ds_grid_set(global.pp_grid, 1, 10, hand);' +
-    '      lastact = "pipette: " + hand;' +
+    // the point of the pipette: the ghost becomes a picture of what was
+    // clicked, not just its type. user 4 read these off the hit instance.
+    '      ds_grid_set(global.pp_grid, 3, 10, global.pp_hang);' +
+    '      ds_grid_set(global.pp_grid, 4, 10, global.pp_hxs);' +
+    '      ds_grid_set(global.pp_grid, 5, 10, global.pp_hys);' +
+    '      ds_grid_set(global.pp_grid, 6, 10, global.pp_hcol);' +
+    '      ds_grid_set(global.pp_grid, 7, 10, global.pp_hcmod);' +
+    '      lastact = "pipette: " + hand + " a=" + string(global.pp_hang) + " x=" + string(global.pp_hxs) + " y=" + string(global.pp_hys);' +
     '    }' +
     '    else lastact = "pipette: nothing grabbable";' +
     '  }' +
@@ -389,6 +534,36 @@ object_event_add(m, 3, 0,
     '      np = instance_create(global.pp_wx, global.pp_wy, obj_doodad);' +
     '      np.sprite_index = handspr; np.lname = handlnm;' +
     '    }' +
+    // The hand transform, applied last so the per-kind default-value scripts
+    // above (wepSetDefvals / modSetDefvals) cannot stomp it. eff_/ef_ are the
+    // glow's own scale and offset: stock's flip negates them alongside
+    // image_*scale, so a flipped part whose glow is not flipped with it is a
+    // visible bug. variable_local_exists because only the section family
+    // carries them.
+    '    var hga, hgx, hgy, hgc, hgm;' +
+    '    hga = ds_grid_get(global.pp_grid, 3, 10);' +
+    '    hgx = ds_grid_get(global.pp_grid, 4, 10);' +
+    '    hgy = ds_grid_get(global.pp_grid, 5, 10);' +
+    '    hgc = ds_grid_get(global.pp_grid, 6, 10);' +
+    '    hgm = ds_grid_get(global.pp_grid, 7, 10);' +
+    '    np.image_angle = hga;' +
+    '    np.image_xscale = hgx;' +
+    '    np.image_yscale = hgy;' +
+    '    with (np) {' +
+    '      if (hgx < 0) {' +
+    '        if (variable_local_exists("eff_xscale")) eff_xscale = -eff_xscale;' +
+    '        if (variable_local_exists("ef_offx")) ef_offx = -ef_offx;' +
+    '      }' +
+    '      if (hgy < 0) {' +
+    '        if (variable_local_exists("eff_yscale")) eff_yscale = -eff_yscale;' +
+    '        if (variable_local_exists("ef_offy")) ef_offy = -ef_offy;' +
+    '      }' +
+    '    }' +
+    // Colour only when the hand actually carries one (a pipetted hand does; a
+    // quickbar/inventory pick does not, and then the part keeps the sidebar's
+    // currently selected colour, which is stock behaviour).
+    '    if (hgc >= 0) { np.l_colour = hgc; np.image_blend = hgc; }' +
+    '    if (hgm >= -1) with (np) if (variable_local_exists("l_colourmod")) l_colourmod = hgm;' +
     '    np.dragged = false;' +
     '    global.object_dragged = false;' +
     '    obj_sidebar.mxchange = 0; obj_sidebar.mychange = 0;' +
@@ -406,6 +581,11 @@ object_event_add(m, 3, 0,
     '  f6 = file_text_open_write("mods/smpick.txt");' +
     '  file_text_write_string(f6, "tick=" + string(tick) + " toppage=" + string(tp + 1) + " gen=" + string(gen)); file_text_writeln(f6);' +
     '  file_text_write_string(f6, "hand=" + hand + " handspr=" + string(handspr) + " handdisp=" + handdisp); file_text_writeln(f6);' +
+    '  file_text_write_string(f6, "xform=" + string(ds_grid_get(global.pp_grid, 3, 10)) + "," + string(ds_grid_get(global.pp_grid, 4, 10)) + "," + string(ds_grid_get(global.pp_grid, 5, 10)) + " col=" + string(ds_grid_get(global.pp_grid, 6, 10)) + "," + string(ds_grid_get(global.pp_grid, 7, 10)) + " rotstep=" + string(global.rotstep)); file_text_writeln(f6);' +
+    // the SELECTED part's transform: the only way to read back what a stock
+    // key did to a real part, which is how the L/J/comma/period mapping above
+    // was pinned rather than guessed
+    '  if (instance_exists(global.selected)) { file_text_write_string(f6, "sel=" + string(global.selected.image_angle) + "," + string(global.selected.image_xscale) + "," + string(global.selected.image_yscale)); file_text_writeln(f6); }' +
     '  row6 = "";' +
     '  for (s6 = 0; s6 <= 9; s6 += 1) row6 = row6 + cdisp[tp * 10 + s6] + ",";' +
     '  file_text_write_string(f6, "toprow=" + row6); file_text_writeln(f6);' +
@@ -413,6 +593,7 @@ object_event_add(m, 3, 0,
     '  file_text_write_string(f6, "esel=" + string(global.gui_esel) + " secpicker=" + string(global.secpicker) + " zoom=" + string(obj_sidebar.l_zoom)); file_text_writeln(f6);' +
     '  file_text_write_string(f6, "placed=" + lastplaced + " w=" + string(round(global.pp_wx)) + "," + string(round(global.pp_wy)) + " win=" + string(round(global.pp_winx)) + "," + string(round(global.pp_winy)) + " overcv=" + string(global.pp_overcv) + " inst=" + string(instance_number(object_index))); file_text_writeln(f6);' +
     '  file_text_write_string(f6, "modal=" + string(modal) + " amode=" + string(amode) + " chip=" + string(chip) + " fcount=" + string(fcount) + " msel=" + string(msel) + " catn=" + string(catn) + " q=" + keyboard_string); file_text_writeln(f6);' +
+    '  file_text_write_string(f6, "wheel warm=" + string(global.pp_warm) + " xdown=" + string(xdown) + " xpend=" + string(xpend) + " vheld=" + string(keyboard_check(86)) + " vstep=" + string(global.rotvstep) + " xstep=" + string(global.rotxstep)); file_text_writeln(f6);' +
     '  file_text_write_string(f6, "lastact=" + lastact); file_text_writeln(f6);' +
     '  file_text_close(f6);' +
     '}');
@@ -718,21 +899,28 @@ object_event_add(m, 7, 15,
 // mask first, then a small collision circle -- the stock sprites use precise
 // masks, so the geometric center of an L-shaped hull is a hole a pixel test
 // would miss.
+//
+// Also reads the hit part's transform and colour into pp_hang / pp_hxs /
+// pp_hys / pp_hcol / pp_hcmod, which the Q handler moves into the hand. Set
+// via user 8 so every branch records them the same way and none can drift.
+// These are only meaningful when pp_hcell != "".
 object_event_add(m, 7, 14,
     'var hh;' +
     'global.pp_hcell = "";' +
+    'global.pp_hang = 0; global.pp_hxs = 1; global.pp_hys = 1;' +
+    'global.pp_hcol = -1; global.pp_hcmod = -2;' +
     'hh = instance_position(global.pp_wx, global.pp_wy, obj_weapon);' +
     'if (hh == noone) hh = collision_circle(global.pp_wx, global.pp_wy, 5, obj_weapon, true, false);' +
-    'if (hh != noone) { global.pp_hcell = "2|" + sprite_get_name(hh.sprite_index) + "|"; exit; }' +
+    'if (hh != noone) { global.pp_hcell = "2|" + sprite_get_name(hh.sprite_index) + "|"; global.pp_hit = hh; event_user(8); exit; }' +
     'hh = instance_position(global.pp_wx, global.pp_wy, obj_module);' +
     'if (hh == noone) hh = collision_circle(global.pp_wx, global.pp_wy, 5, obj_module, true, false);' +
-    'if (hh != noone) { global.pp_hcell = "3|" + sprite_get_name(hh.sprite_index) + "|"; exit; }' +
+    'if (hh != noone) { global.pp_hcell = "3|" + sprite_get_name(hh.sprite_index) + "|"; global.pp_hit = hh; event_user(8); exit; }' +
     'hh = instance_position(global.pp_wx, global.pp_wy, obj_doodad);' +
     'if (hh == noone) hh = collision_circle(global.pp_wx, global.pp_wy, 5, obj_doodad, true, false);' +
     'if (hh != noone) {' +
     '  global.pp_lnm = hh.lname; global.pp_fnm = "";' +
     '  event_user(3);' +
-    '  if (global.pp_fnm != "") global.pp_hcell = "4|" + global.pp_fnm + "|" + hh.lname;' +
+    '  if (global.pp_fnm != "") { global.pp_hcell = "4|" + global.pp_fnm + "|" + hh.lname; global.pp_hit = hh; event_user(8); }' +
     '  exit;' +
     '}' +
     'hh = instance_position(global.pp_wx, global.pp_wy, obj_section);' +
@@ -740,8 +928,32 @@ object_event_add(m, 7, 14,
     'if (hh != noone) {' +
     '  global.pp_lnm = hh.lname; global.pp_fnm = "";' +
     '  event_user(3);' +
-    '  if (global.pp_fnm != "") global.pp_hcell = "1|" + global.pp_fnm + "|" + hh.lname;' +
+    '  if (global.pp_fnm != "") { global.pp_hcell = "1|" + global.pp_fnm + "|" + hh.lname; global.pp_hit = hh; event_user(8); }' +
     '}');
+
+// ------------------------- user 8: read global.pp_hit's transform + colour
+// into the pp_h* exports. l_colourmod is the section/doodad "which of the
+// three team colour variants" index (-1 = a custom colour); weapons and
+// modules only ever carry a literal colour, so the read is guarded.
+object_event_add(m, 7, 18,
+    'with (global.pp_hit) {' +
+    '  global.pp_hang = image_angle;' +
+    '  global.pp_hxs = image_xscale;' +
+    '  global.pp_hys = image_yscale;' +
+    '  global.pp_hcol = image_blend;' +
+    '  if (variable_local_exists("l_colour")) global.pp_hcol = l_colour;' +
+    '  if (variable_local_exists("l_colourmod")) global.pp_hcmod = l_colourmod;' +
+    '}');
+
+// --------------------- user 7: hand transform back to identity, no colour.
+// Called from every path that empties the hand, so "Esc then pick again" is
+// the reliable way back to a square, default-coloured ghost.
+object_event_add(m, 7, 17,
+    'ds_grid_set(global.pp_grid, 3, 10, 0);' +
+    'ds_grid_set(global.pp_grid, 4, 10, 1);' +
+    'ds_grid_set(global.pp_grid, 5, 10, 1);' +
+    'ds_grid_set(global.pp_grid, 6, 10, -1);' +
+    'ds_grid_set(global.pp_grid, 7, 10, -2);');
 
 // --------------------------------------------- user 1: write mods/smpick.cfg
 object_event_add(m, 7, 11,
@@ -939,13 +1151,32 @@ object_event_add(m, 8, 0,
     '  for (s = 0; s <= 2; s += 1)' +
     '    draw_rectangle(bx + (538 + s * 14) * z + lox, yb - (101 - r * 14) * zy + loy, bx + (548 + s * 14) * z + lox, yb - (91 - r * 14) * zy + loy, 0);' +
     'if (handspr >= 0) {' +
+    '  var hla, hlx, hly, hlc, hlab;' +
+    '  hla = ds_grid_get(global.pp_grid, 3, 10);' +
+    '  hlx = ds_grid_get(global.pp_grid, 4, 10);' +
+    '  hly = ds_grid_get(global.pp_grid, 5, 10);' +
+    '  hlc = ds_grid_get(global.pp_grid, 6, 10);' +
+    '  if (hlc < 0) hlc = c_white;' +
     '  draw_set_color(c_yellow);' +
     // off bx, not the raw view center: bx carries the projection correction
     '  draw_text_transformed(bx + (277 - 4 * string_length(handdisp)) * z, yb - 132 * zy, handdisp, z, zy, 0);' +
+    // A transformed hand says so under the name, because a 180-degree ghost of
+    // a symmetric plate looks identical to an untransformed one and you would
+    // otherwise stamp a wrong-parity part with no warning. Mirrored axes read
+    // as X/Y rather than a minus sign on the scale, which is what the stock
+    // Edit tab shows.
+    '  hlab = "";' +
+    '  if (hla != 0) hlab = string(hla) + " deg";' +
+    '  if (hlx < 0) { if (hlab != "") hlab = hlab + "  "; hlab = hlab + "flip X"; }' +
+    '  if (hly < 0) { if (hlab != "") hlab = hlab + "  "; hlab = hlab + "flip Y"; }' +
+    '  if (hlab != "") {' +
+    '    draw_set_color(merge_color(c_ltgray, c_green, 0.5));' +
+    '    draw_text_transformed(bx + (277 - 4 * string_length(hlab)) * z, yb - 120 * zy, hlab, z, zy, 0);' +
+    '  }' +
     // the ghost lives in world scale -- filter it like the canvas parts
     '  if (global.pp_overcv) {' +
     '    texture_set_interpolation(1);' +
-    '    draw_sprite_ext(handspr, 0, global.pp_wx, global.pp_wy, 1, 1, 0, c_white, 0.6);' +
+    '    draw_sprite_ext(handspr, 0, global.pp_wx, global.pp_wy, hlx, hly, hla, hlc, 0.6);' +
     '    texture_set_interpolation(0);' +
     '  }' +
     '}' +
@@ -962,21 +1193,45 @@ i.depth = -10000000;
 // snapshots l_zoom + view1's rect every Step while the modal is open, and the
 // appended code below UNDOES whatever stock zoom just did, then feeds the
 // wheel tick to the modal as a scroll step instead.
+//
+// The hand-rotate (pp_warm) rides the same append for the same reason: the
+// zoom has to be put back inside the event that caused it, or the canvas
+// visibly jumps for a frame. It only banks the tick -- Step does the turning,
+// where the ordering against every other instance's wheel event is settled.
 global.pp_msnap = 0;
 global.pp_mz = 1; global.pp_mvx = 0; global.pp_mvy = 0;
 global.pp_mvw = 0; global.pp_mvh = 0;
 global.pp_mscroll = 0;
+global.pp_warm = 0; global.pp_wtick = 0; global.pp_wany = 0;
 object_event_add(obj_sidebar, 6, 60,
+    'global.pp_wany = 1;' +
     'if (global.pp_msnap) {' +
     '  l_zoom = global.pp_mz;' +
     '  view_wview[1] = global.pp_mvw; view_hview[1] = global.pp_mvh;' +
     '  view_xview[1] = global.pp_mvx; view_yview[1] = global.pp_mvy;' +
     '  global.pp_mscroll -= 1;' +
+    '}' +
+    // pp_wtick counts CLOCKWISE steps, so Step can subtract it from the angle
+    // the same way L does. Measured against stock on this runner 2026-08-08:
+    // V + wheel-DOWN turned a selected part -15 (clockwise), so wheel down is
+    // the positive direction here and wheel up is the negative one.
+    'else if (global.pp_warm) {' +
+    '  l_zoom = global.pp_mz;' +
+    '  view_wview[1] = global.pp_mvw; view_hview[1] = global.pp_mvh;' +
+    '  view_xview[1] = global.pp_mvx; view_yview[1] = global.pp_mvy;' +
+    '  global.pp_wtick -= 1;' +
     '}');
 object_event_add(obj_sidebar, 6, 61,
+    'global.pp_wany = 1;' +
     'if (global.pp_msnap) {' +
     '  l_zoom = global.pp_mz;' +
     '  view_wview[1] = global.pp_mvw; view_hview[1] = global.pp_mvh;' +
     '  view_xview[1] = global.pp_mvx; view_yview[1] = global.pp_mvy;' +
     '  global.pp_mscroll += 1;' +
+    '}' +
+    'else if (global.pp_warm) {' +
+    '  l_zoom = global.pp_mz;' +
+    '  view_wview[1] = global.pp_mvw; view_hview[1] = global.pp_mvh;' +
+    '  view_xview[1] = global.pp_mvx; view_yview[1] = global.pp_mvy;' +
+    '  global.pp_wtick += 1;' +
     '}');

@@ -1,8 +1,9 @@
 # Act II — game internals map
 
-Everything Act II hooks into, verified against the decrypted v0.90d tree
-(`~/Documents/cursor/research/bsf/`: `objects.json`, `scripts.json`,
-`dump/all_gml.txt`, `gmobj.walk_section()` for index-correct names).
+Everything Act II hooks into, verified against the decrypted v0.90d tree —
+the research root `build.py` discovers, or `$BSF_BASE` (`objects.json`,
+`scripts.json`, `dump/all_gml.txt`, `gmobj.walk_section()` for index-correct
+names).
 Modding rules of engagement are in `MODDING-GUIDE.md` there — append-only
 events, no `&&` short-circuit, no string escapes, `var` before `with`.
 
@@ -93,7 +94,7 @@ events, no `&&` short-circuit, no string escapes, `var` before `with`.
 
 ## Dev install facts
 
-- Live game: `~/Documents/cursor/research/bsf/battleshipsforeverv090d/`
+- Live game: the `battleshipsforeverv090d/` install under that research root
   (patched exe, `mods/` chained from `mods/init.gml`; syntax errors are
   silent — check `game_errors.log`, healthy = 49 + one per menu visit).
 - `mods/campaign.gml` (gate: `mods/campaign.on`) is the file-driven mission

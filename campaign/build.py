@@ -22,6 +22,7 @@ The GML emitter honours the GM7 traps from MODDING-GUIDE.md by construction:
 """
 import html
 import json
+import glob
 import os
 import re
 import shutil
@@ -38,9 +39,36 @@ MISSIONS = os.path.join(HERE, "missions")
 OUT_HTML = os.path.join(HERE, "out")
 OUT_MODS = os.path.join(REPO, "mods")
 
-# The research checkout that holds the decrypted tree and the live install.
-RESEARCH = os.path.expanduser("~/Documents/cursor/research/bsf")
-INSTALL = os.path.join(RESEARCH, "battleshipsforeverv090d")
+# The decrypted tree and the live install. Discovered, never hardcoded: an
+# absolute path embeds whoever's account it was authored on. $BSF_BASE wins;
+# otherwise look for a v0.90d install within two levels of the directory
+# holding this checkout, and take its parent as the research root.
+_DIST = "battleshipsforeverv090d"
+
+
+def _find_research():
+    """$BSF_BASE, else the parent of any v0.90d install found near this tree.
+
+    Ancestors are walked because a git worktree sits several levels below the
+    main checkout, so the install is not necessarily a near sibling of REPO.
+    """
+    env = os.environ.get("BSF_BASE")
+    if env:
+        return os.path.expanduser(env)
+    d = REPO
+    for _ in range(5):
+        d = os.path.dirname(d)
+        if not d or d == os.path.sep:
+            break
+        for pat in ("*/" + _DIST, "*/*/" + _DIST):
+            for c in sorted(glob.glob(os.path.join(d, pat))):
+                if os.path.isdir(c):
+                    return os.path.dirname(c)
+    return os.path.dirname(REPO)
+
+
+RESEARCH = _find_research()
+INSTALL = os.path.join(RESEARCH, _DIST)
 
 GREEN = "$00FF00"
 COLORS = {"green": "$00FF00", "red": "c_red", "magenta": "$FF00FF", "white": "c_white"}
