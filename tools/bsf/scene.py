@@ -1,0 +1,202 @@
+#!/usr/bin/env python3
+"""Compile a ship into a flat draw list.
+
+This is the contract between the two renderers. Everything error-prone --
+core-relative conversion, depth ordering, colour resolution, turret pivots,
+sprite resolution and substitution -- happens exactly once, here. The PIL
+blitter and the browser canvas then consume the identical list, so they cannot
+disagree about anything except how they rasterise a rotated bitmap.
+
+An op is deliberately dumb:
+
+    {id, kind, spr, x, y, xs, ys, ang, blend, alpha, mode, z, ox, oy, w, h}
+
+`x, y` are core-relative with y **down**, matching the file, ShipMaker and Game
+Maker itself. `ox, oy` is the point the sprite rotates about, which for a turret
+is the base of its barrel rather than the sprite centre.
+
+Draw order is sections by descending depth (Game Maker draws larger depth first,
+i.e. furthest back), then modules, then weapons, then the bridge bead at the
+origin. The relative order of those four groups is an assumption about the
+editor's own draw order and is one of the things `ship verify` exists to check.
+"""
+from __future__ import annotations
+
+import pathlib
+import sys
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import model      # noqa: E402
+import sprites    # noqa: E402
+
+#: Group ordering. Lower sorts earlier, i.e. further back. The core really does
+#: sit behind everything -- ShipMaker gives it `depth = 99999` against sections
+#: in the 1..20 range -- so the hull plates lie over it.
+LAYER_CORE, LAYER_SECTION, LAYER_MODULE, LAYER_WEAPON, LAYER_BRIDGE = -1, 0, 1, 2, 3
+
+#: nCor,image_index,l_colourtype,l_colour,image_xscale,image_yscale,
+#:      l_fadecol,x,y,l_formrank
+COR_INDEX, COR_COLTYPE, COR_COLOUR, COR_XS, COR_YS = 0, 1, 2, 3, 4
+
+#: The bridge bead is suppressed for two core shapes. From the editor's own
+#: draw event:  if obj_core.image_index != 3 && != 5 && global.renderbridge == 1
+BRIDGELESS_CORES = {3, 5}
+
+
+def _hex(rgb: tuple[int, int, int]) -> str:
+    return '#%02X%02X%02X' % rgb
+
+
+class Op(dict):
+    """A single draw call. A dict so it serialises straight to JSON."""
+
+
+def _mount_ops(ship: model.Ship, kind: str, rec_kind: str, layer: int,
+               notes: list[str], missing: list[str]) -> list[Op]:
+    """Weapons (`nWepA`) and modules (`nModA`) share a field layout.
+
+        nWepA, id, x, y, sprite, xscale, yscale, angle, image_speed,
+               alpha, image_blend, 0, colour
+    """
+    ops: list[Op] = []
+    for r in ship.of_kind(rec_kind):
+        name = r.txt(3)
+        if not name:
+            continue
+        sp, path, note = sprites.best(name, mask=False, pivot=True)
+        if sp is None:
+            missing.append(name)
+            continue
+        if note and note not in notes:
+            notes.append(note)
+        ops.append(Op(
+            id=int(r.num(0)), kind=kind, spr=str(path), name=name,
+            x=round(r.num(1) - ship.core_x, 2), y=round(r.num(2) - ship.core_y, 2),
+            xs=r.num(4, 1.0), ys=r.num(5, 1.0), ang=r.num(6),
+            blend='#FFFFFF', alpha=r.num(8, 1.0),
+            mode='normal', layer=layer, z=0.0,
+            ox=sp.ox, oy=sp.oy, w=sp.w, h=sp.h, mask=False,
+            glow=name in sprites.MODULES,
+        ))
+    return ops
+
+
+def build(ship: model.Ship, *, bridge: bool = True) -> dict:
+    """Everything needed to draw the ship, in draw order."""
+    ops: list[Op] = []
+    notes: list[str] = []
+    missing: list[str] = []
+
+    cor = ship.core
+    core_index = int(cor.num(COR_INDEX)) if cor else 0
+
+    # The core is a tinted 80x80 sprite at the origin, not just the bridge bead.
+    # Its shape is chosen by image_index, but only one core frame exists on disk
+    # -- the rest live in the encrypted gamedata -- so anything other than frame
+    # 0 is drawn as frame 0 and flagged.
+    if cor is not None:
+        sp = sprites.get_exe('spr_core', core_index, mask=True)
+        if sp is None:                       # no exe cache: fall back to disk
+            dp = sprites.resolve('spr_Core')
+            if dp is not None:
+                sp = sprites.load(str(dp), mask=True, pivot=False)
+                if core_index != 0:
+                    notes.append(f'core shape {core_index}: exe art not extracted — '
+                                 f'drawn as the single on-disk frame '
+                                 f'(run exeart.py)')
+        if sp is None:
+            missing.append('spr_core')
+        else:
+            p = sp.path
+            ops.append(Op(
+                id=0, kind='core', spr=str(p), name='spr_core',
+                x=0.0, y=0.0,
+                xs=cor.num(COR_XS, 1.0), ys=cor.num(COR_YS, 1.0), ang=0.0,
+                blend=_hex(sprites.gm_colour(cor.num(COR_COLOUR))),
+                alpha=1.0, mode='normal', layer=LAYER_CORE, z=99999.0,
+                ox=sp.ox, oy=sp.oy, w=sp.w, h=sp.h, mask=True,
+                parent=None, mirror=None, glow=False, frame=core_index,
+            ))
+
+    for sec in ship.sections:
+        path = sprites.resolve(sec.sprite)
+        if path is None:
+            missing.append(sec.sprite)
+            continue
+        sp = sprites.load(str(path), mask=True, pivot=False)
+        ops.append(Op(
+            id=sec.id, kind='section', spr=str(path), name=sec.name,
+            x=sec.x, y=sec.y, xs=sec.xscale, ys=sec.yscale, ang=sec.angle,
+            blend=_hex(sprites.gm_colour(sec.colour)), alpha=sec.alpha,
+            mode='normal', layer=LAYER_SECTION, z=sec.depth,
+            ox=sp.ox, oy=sp.oy, w=sp.w, h=sp.h, mask=True,
+            parent=sec.parent, mirror=sec.mirror, glow=False,
+        ))
+
+    ops += _mount_ops(ship, 'module', 'nModA', LAYER_MODULE, notes, missing)
+    ops += _mount_ops(ship, 'weapon', 'nWepA', LAYER_WEAPON, notes, missing)
+
+    if bridge and core_index not in BRIDGELESS_CORES:
+        sp = sprites.get_exe('spr_bridge', 0, mask=False)
+        if sp is None:
+            dp = sprites.resolve(sprites.BRIDGE)
+            sp = sprites.load(str(dp), mask=False, pivot=False) if dp else None
+        if sp is not None:
+            p = sp.path
+            ops.append(Op(
+                id=-1, kind='bridge', spr=str(p), name=sprites.BRIDGE,
+                x=0.0, y=0.0, xs=1.0, ys=1.0, ang=0.0,
+                blend='#FFFFFF', alpha=1.0, mode='normal',
+                layer=LAYER_BRIDGE, z=0.0,
+                ox=sp.ox, oy=sp.oy, w=sp.w, h=sp.h, mask=False, glow=False,
+            ))
+
+    # Game Maker draws larger depth first, so within the section layer the
+    # highest depth is furthest back.
+    ops.sort(key=lambda o: (o['layer'], -o['z']))
+
+    return {
+        'name': ship.name,
+        'file': str(ship.path),
+        'generation': ship.generation,
+        'version': ship.version,
+        'bbox': bbox(ops),
+        'counts': {k: sum(1 for o in ops if o['kind'] == k)
+                   for k in ('core', 'section', 'weapon', 'module', 'bridge')},
+        'notes': notes,
+        'missing': sorted(set(missing)),
+        'ops': ops,
+    }
+
+
+def bbox(ops: list[Op]) -> list[float]:
+    """Axis-aligned bounds in core-relative space, accounting for rotation.
+
+    Uses each sprite's rotated corner extents rather than its alpha, so this is
+    an upper bound on the true silhouette -- adequate for framing a render, and
+    deliberately not what `ship check` will use for occlusion.
+    """
+    import math
+    if not ops:
+        return [0.0, 0.0, 0.0, 0.0]
+    xs, ys = [], []
+    for o in ops:
+        w, h = o['w'] * abs(o['xs']), o['h'] * abs(o['ys'])
+        a = math.radians(o['ang'])
+        ca, sa = abs(math.cos(a)), abs(math.sin(a))
+        hw, hh = (w * ca + h * sa) / 2, (w * sa + h * ca) / 2
+        xs += [o['x'] - hw, o['x'] + hw]
+        ys += [o['y'] - hh, o['y'] + hh]
+    return [round(min(xs), 2), round(min(ys), 2), round(max(xs), 2), round(max(ys), 2)]
+
+
+def for_web(sc: dict) -> dict:
+    """The same scene with sprite pixels inlined, for the browser."""
+    out = dict(sc)
+    seen: dict[str, str] = {}
+    for o in sc['ops']:
+        if o['spr'] not in seen:
+            sp = sprites.load_any(o['spr'], o['mask'], o['kind'] in ('weapon', 'module'))
+            seen[o['spr']] = sprites.data_uri(sp)
+    out['sprites'] = seen
+    return out
