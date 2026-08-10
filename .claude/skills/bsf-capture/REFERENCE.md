@@ -119,9 +119,9 @@ re-checking (see `to_main_menu` in scripts/drive-lib.sh).
   `wmctrl -b add,fullscreen`. Escape hatch:
   `AppDefaults\BattleshipsForever.exe\X11 Driver` → `Managed=N` covers the
   whole monitor but is kiosk mode (WM can't raise anything above it).
-* Verdict: the wine **virtual desktop stays the robust fullscreen path** on this
-  desktop; options.gml's fullscreen is a borderless screen-sized window +
-  drift watchdog (never GM fullscreen — it ignores `window_set_size`).
+* Verdict: the wine **virtual desktop stays the robust fullscreen path** on the
+  reference desktop; options.gml's fullscreen is a borderless screen-sized
+  window + drift watchdog (never GM fullscreen — it ignores `window_set_size`).
 
 ## Modeset-on-exit blackout — fixed 2026-08-08
 

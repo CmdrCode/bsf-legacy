@@ -5,7 +5,7 @@ The shipped campaign's eight episodes are **Act I: Pirate Incursion**; everythin
 
 > **Status:** Version 1 — the shipped game's voice — is the chosen production treatment.
 > The voice, color, and canon rules for writing in it live in the `bsf-storytelling`
-> skill (`.claude/skills/bsf-storytelling/SKILL.md`, untracked, main checkout).
+> skill (`.claude/skills/bsf-storytelling/SKILL.md`).
 
 Act II opens **nineteen years** after Episode 8. The math: Battleships Forever shipped in
 2007; BSF Legacy's current release (v0.1.0) is 2026. So the war has been lost, slowly, for
