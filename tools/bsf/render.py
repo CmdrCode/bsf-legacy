@@ -75,13 +75,21 @@ def _transform(op: dict, frame: np.ndarray) -> tuple[Image.Image, float, float]:
 
 def render(sc: dict, *, scale: int = 4, pad: int = 8,
            background: tuple[int, int, int, int] = (5, 7, 10, 255),
-           highlight: set[int] | None = None,
-           dim_others: bool = False):
+           highlight: set[int] | None = None,   # op indices, not part ids
+           dim_others: bool = False,
+           want_masks: bool = False):
     """Draw the scene. Returns (PIL image, id buffer, transform info).
 
     `scale` is integer supersampling: the scene is drawn at 1 BSF pixel = 1
     image pixel and then enlarged, so geometry stays exact and only the final
     presentation is scaled.
+
+    With `want_masks` the info dict gains a `masks` entry: one canvas-sized
+    boolean array per op, holding the coverage that op *would* have if nothing
+    were drawn over it. Producing it here rather than in a second pass is what
+    keeps it comparable with the id buffer -- both apply the same transform and
+    the same `alpha > 127` cut, so `mask.sum()` and `(ids == i).sum()` are the
+    same measurement before and after occlusion.
     """
     x0, y0, x1, y1 = sc['bbox']
     w = max(1, int(math.ceil(x1 - x0)) + pad * 2)
@@ -90,6 +98,7 @@ def render(sc: dict, *, scale: int = 4, pad: int = 8,
 
     canvas = Image.new('RGBA', (w, h), background)
     ids = np.full((h, w), -1, dtype=np.int32)
+    masks: list[np.ndarray] = []
 
     import sprites as _sprites
     for idx, op in enumerate(sc['ops']):
@@ -97,7 +106,9 @@ def render(sc: dict, *, scale: int = 4, pad: int = 8,
         img, ox, oy = _transform(op, sp.frames[0])
 
         alpha = op.get('alpha', 1.0)
-        lit = highlight is None or op['id'] in highlight
+        # Op index, not part id: a section and a weapon can both be id 0, so an
+        # id-keyed highlight would light up whichever happened to match.
+        lit = highlight is None or idx in highlight
         if dim_others and not lit:
             alpha *= 0.22
         if alpha < 1.0:
@@ -109,11 +120,18 @@ def render(sc: dict, *, scale: int = 4, pad: int = 8,
         canvas.alpha_composite(img, (px, py)) if _in_bounds(px, py, img, canvas) \
             else _safe_composite(canvas, img, px, py)
 
+        if want_masks:
+            m = np.zeros((h, w), dtype=bool)
+            _stamp(m, img, px, py, True)
+            masks.append(m)
         _stamp(ids, img, px, py, idx)
 
     if scale != 1:
         canvas = canvas.resize((w * scale, h * scale), Image.NEAREST)
-    return canvas, ids, {'w': w, 'h': h, 'cx': cx, 'cy': cy, 'scale': scale}
+    info = {'w': w, 'h': h, 'cx': cx, 'cy': cy, 'scale': scale}
+    if want_masks:
+        info['masks'] = masks
+    return canvas, ids, info
 
 
 def _in_bounds(px, py, img, canvas) -> bool:
@@ -130,7 +148,7 @@ def _safe_composite(canvas: Image.Image, img: Image.Image, px: int, py: int) -> 
     canvas.alpha_composite(img.crop((cx0 - px, cy0 - py, cx1 - px, cy1 - py)), (cx0, cy0))
 
 
-def _stamp(ids: np.ndarray, img: Image.Image, px: int, py: int, idx: int) -> None:
+def _stamp(ids: np.ndarray, img: Image.Image, px: int, py: int, idx) -> None:
     """Record this op as the owner of every pixel it painted opaquely."""
     h, w = ids.shape
     cx0, cy0 = max(0, px), max(0, py)
@@ -145,7 +163,7 @@ def save(sc: dict, path: str, **kw) -> dict:
     img, ids, info = render(sc, **kw)
     img.convert('RGB').save(path)
     info['path'] = path
-    info['visible'] = {}
-    for idx, op in enumerate(sc['ops']):
-        info['visible'][op['id']] = int((ids == idx).sum())
+    # Keyed by kind and id together: part ids are only unique within a kind.
+    info['visible'] = {f'{op["kind"]} {op["id"]}': int((ids == idx).sum())
+                       for idx, op in enumerate(sc['ops'])}
     return info

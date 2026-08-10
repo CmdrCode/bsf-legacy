@@ -102,6 +102,37 @@ def diff(path: pathlib.Path, rev: str) -> str:
     return _git('diff', rev, '--', slug(path), check=False).stdout
 
 
+def baseline_path(path: pathlib.Path) -> pathlib.Path:
+    return REPO / (slug(path) + '.accepted.json')
+
+
+def read_baseline(path: pathlib.Path) -> list[str]:
+    """Finding keys the user has already said are fine.
+
+    Lives beside the ship in the shadow repo so it is versioned with the
+    history: `ship log` shows when a finding was accepted, and `undo` takes the
+    baseline back with the ship (D20).
+    """
+    p = baseline_path(path)
+    if not p.exists():
+        return []
+    import json
+    try:
+        return list(json.loads(p.read_text()).get('accepted', []))
+    except (ValueError, OSError):
+        return []
+
+
+def write_baseline(path: pathlib.Path, keys: list[str], note: str = '') -> None:
+    import json
+    _ensure_repo()
+    p = baseline_path(path)
+    p.write_text(json.dumps({'ship': path.name, 'accepted': sorted(keys)}, indent=1))
+    _git('add', p.name)
+    _git('commit', '-qm', f'{path.name}: accept {len(keys)} finding(s) {note}',
+         check=False)
+
+
 class Guarded:
     """Read a ship, and refuse to write it back if it moved underneath us."""
 

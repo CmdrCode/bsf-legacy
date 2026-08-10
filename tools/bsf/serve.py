@@ -64,6 +64,7 @@ PAGE = r'''<!doctype html>
   <span class="stat">sections <b id="ns">0</b></span>
   <span class="stat">weapons <b id="nw">0</b></span>
   <span class="stat">modules <b id="nm2">0</b></span>
+  <span class="stat">doodads <b id="nd">0</b></span>
   <span class="stat">size <b id="sz">—</b></span>
   <span class="stat" id="notes"></span>
   <span class="stat" style="margin-left:auto">rev <b id="rev">—</b></span>
@@ -95,6 +96,7 @@ async function loadScene(){
   SC=sc;
   ui('nm').textContent=sc.name;ui('ns').textContent=sc.counts.section;
   ui('nw').textContent=sc.counts.weapon;ui('nm2').textContent=sc.counts.module;
+  ui('nd').textContent=sc.counts.doodad||0;
   const b=sc.bbox;ui('sz').textContent=Math.round(b[2]-b[0])+'×'+Math.round(b[3]-b[1]);
   const msgs=[...sc.notes,...(sc.missing.length?['unresolved: '+sc.missing.join(', ')]:[])];
   ui('notes').innerHTML=msgs.length?'<span class="warn">'+msgs.join(' · ')+'</span>':'';

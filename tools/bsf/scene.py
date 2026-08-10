@@ -51,31 +51,70 @@ class Op(dict):
     """A single draw call. A dict so it serialises straight to JSON."""
 
 
-def _mount_ops(ship: model.Ship, kind: str, rec_kind: str, layer: int,
-               notes: list[str], missing: list[str]) -> list[Op]:
-    """Weapons (`nWepA`) and modules (`nModA`) share a field layout.
+def _doodad_sprite(name: str):
+    """(sprite, path, note) for a doodad's `lname`.
 
-        nWepA, id, x, y, sprite, xscale, yscale, angle, image_speed,
-               alpha, image_blend, 0, colour
+    ShipMaker's own loader branches on the string's length: anything longer than
+    four characters is a file under `Custom sprites/` (`.png` or `.gif`, and it
+    strips either extension to derive the resource name), and anything shorter
+    is a bare sprite index into the game's own resources. Only the first case is
+    resolvable from here -- the exe index is keyed by name, and the tree's
+    ordering is not preserved in it -- so a numeric `lname` is reported missing
+    rather than guessed at.
+    """
+    if '\\' in name or '/' in name or name.lower().endswith(('.png', '.gif')):
+        path = sprites.resolve(name)
+        if path is None:
+            return None, None, None
+        return sprites.load(str(path), mask=True, pivot=False), path, None
+    return sprites.best(name, mask=True, pivot=False)
+
+
+def _mount_ops(ship: model.Ship, kind: str, layer: int,
+               notes: list[str], missing: list[str]) -> list[Op]:
+    """Draw ops for one family of mounted parts.
+
+    Weapons and modules sit on fixed layers in front of the hull. Doodads do
+    not: ShipMaker recomputes every doodad's depth as `parent.depth - 0.0001`
+    after a load, which puts each one immediately in front of the section it is
+    attached to rather than in front of the whole ship. That is a real mechanism
+    read out of the editor's own code, so it is modelled rather than approximated
+    -- doodads join the section layer and sort among the plates.
+
+    The same code also re-depths a weapon or module *if* its `ts_depthed` flag
+    is set, which the fixed layers here do not model. No ship on disk sets it,
+    and settling layer order is what `ship verify` exists for (D12).
     """
     ops: list[Op] = []
-    for r in ship.of_kind(rec_kind):
-        name = r.txt(3)
+    for m in ship.mounts:
+        if m.kind != kind:
+            continue
+        name = m.sprite
         if not name:
             continue
-        sp, path, note = sprites.best(name, mask=False, pivot=True)
+        if kind == 'doodad':
+            sp, path, note = _doodad_sprite(name)
+        else:
+            sp, path, note = sprites.best(name, mask=False, pivot=True)
         if sp is None:
             missing.append(name)
             continue
         if note and note not in notes:
             notes.append(note)
+
+        z, lay = 0.0, layer
+        if kind == 'doodad':
+            host = ship.section(m.parent)
+            z = (host.depth - 0.0001) if host is not None else m.depth
+            lay = LAYER_SECTION
         ops.append(Op(
-            id=int(r.num(0)), kind=kind, spr=str(path), name=name,
-            x=round(r.num(1) - ship.core_x, 2), y=round(r.num(2) - ship.core_y, 2),
-            xs=r.num(4, 1.0), ys=r.num(5, 1.0), ang=r.num(6),
-            blend='#FFFFFF', alpha=r.num(8, 1.0),
-            mode='normal', layer=layer, z=0.0,
-            ox=sp.ox, oy=sp.oy, w=sp.w, h=sp.h, mask=False,
+            id=m.id, kind=kind, spr=str(path), name=m.name,
+            x=m.x, y=m.y, xs=m.xscale, ys=m.yscale, ang=m.angle,
+            blend=_hex(sprites.gm_colour(m.colour)) if kind == 'doodad' else '#FFFFFF',
+            alpha=m.alpha,
+            mode='normal', layer=lay, z=z,
+            ox=sp.ox, oy=sp.oy, w=sp.w, h=sp.h, mask=kind == 'doodad',
+            parent=m.parent, mirror=m.mirror,
             glow=name in sprites.MODULES,
         ))
     return ops
@@ -133,8 +172,9 @@ def build(ship: model.Ship, *, bridge: bool = True) -> dict:
             parent=sec.parent, mirror=sec.mirror, glow=False,
         ))
 
-    ops += _mount_ops(ship, 'module', 'nModA', LAYER_MODULE, notes, missing)
-    ops += _mount_ops(ship, 'weapon', 'nWepA', LAYER_WEAPON, notes, missing)
+    ops += _mount_ops(ship, 'doodad', LAYER_SECTION, notes, missing)
+    ops += _mount_ops(ship, 'module', LAYER_MODULE, notes, missing)
+    ops += _mount_ops(ship, 'weapon', LAYER_WEAPON, notes, missing)
 
     if bridge and core_index not in BRIDGELESS_CORES:
         sp = sprites.get_exe('spr_bridge', 0, mask=False)
@@ -162,7 +202,7 @@ def build(ship: model.Ship, *, bridge: bool = True) -> dict:
         'version': ship.version,
         'bbox': bbox(ops),
         'counts': {k: sum(1 for o in ops if o['kind'] == k)
-                   for k in ('core', 'section', 'weapon', 'module', 'bridge')},
+                   for k in ('core', 'section', 'doodad', 'weapon', 'module', 'bridge')},
         'notes': notes,
         'missing': sorted(set(missing)),
         'ops': ops,
