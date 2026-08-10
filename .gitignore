@@ -94,3 +94,10 @@ __pycache__/
 !/.claude/skills/bsf-ships/
 !/.claude/skills/bsf-capture/
 !/.claude/skills/bsf-storytelling/
+
+# ...but NOT the campaign reference that skill generates. CAMPAIGN.html is the
+# game's own briefings and comm traffic, extracted verbatim by
+# bsf-storytelling/scripts/extract-campaign.py -- exactly the thing this repo
+# never publishes. Ship the generator, never its output. This rule comes after
+# the re-include above because the last matching pattern wins.
+/.claude/skills/bsf-storytelling/CAMPAIGN.html

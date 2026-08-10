@@ -19,14 +19,31 @@ automatically.)
 
 - `campaign/ACT-II.md` — the Act II scenario, on `main`. Its Version 1 is the
   chosen treatment; Versions 2–3 were style explorations.
-- **The eight shipped Act I episodes** — their briefings, comm lines and
-  triggers are what everything below was distilled from. **No transcript of them
-  is in this repo, and none can be**: the campaign text is the game's own, and
-  nothing extracted from Battleships Forever is ever committed here. Read the
-  episodes in the game to check a line against the original.
+- **`CAMPAIGN.html`, beside this file** — all eight Act I episodes: every
+  briefing, every line of comm traffic with its speaker and colour, and the
+  trigger logic underneath. Verbatim, typos included. This is the voice
+  reference.
 
-The rest of this file is the distillation, so it stands on its own. You need the
-original only to verify a quotation, never to write to the voice.
+`CAMPAIGN.html` is **generated and git-ignored**, so a fresh clone does not have
+it — the campaign text is the game's own, and nothing extracted from Battleships
+Forever is committed here. Ship the generator, never its output. Build it once:
+
+```bash
+python3 .claude/skills/bsf-storytelling/scripts/extract-campaign.py
+```
+
+It reads the GML straight out of `BattleshipsForever.exe`'s resource tree — no
+wine, no running game, well under a second. If the install is not found, point
+`$BSF_GAME` at it or pass `--exe`. Re-run it any time; it overwrites in place.
+
+What it carries is what the game actually stores: briefings, objectives,
+deployment counts, all dialogue, autosaves, music cues, failure strings and the
+Step conditions that advance each chain. What it cannot carry is editorial
+commentary — per-episode analysis, locations, ranks, opposition summaries — none
+of which exists in the game. The script does not invent them.
+
+Everything below is the distillation and stands on its own; the transcript is
+for verifying a quotation, not for writing to the voice.
 
 ## The form
 
