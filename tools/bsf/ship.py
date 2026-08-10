@@ -1,18 +1,27 @@
 #!/usr/bin/env python3
 """ship -- read, edit and see Battleships Forever ships.
 
-    ship tree     Pendulum.sb4
+    ship tree     Pendulum.sb4                 hierarchy, mounts under their host
     ship render   Pendulum.sb4 -o out.png --scale 6
-    ship move  5  --by +4,-2      Pendulum.sb4
+    ship serve    Pendulum.sb4                 live browser preview
+    ship select   'weapon and x > 60' Pendulum.sb4 --shot sel.png
+    ship check    Pendulum.sb4 [--accept]      lint, with a known-findings baseline
+    ship move   5 --by +4,-2      Pendulum.sb4
     ship rotate 5 --by 15         Pendulum.sb4 --with-children
-    ship flip  5  --axis y        Pendulum.sb4
+    ship add / mirror / remove / reparent      structural edits
+    ship arm    Blaster --at=40,10 --parent 3  mount a weapon
+    ship parts  list|sheet|near                the sprite catalogue
     ship log / diff / undo        Pendulum.sb4
-    ship serve    Pendulum.sb4
 
 Coordinates are **core-relative with y down**, matching the file, ShipMaker and
 Game Maker itself; `-15` is up. Edits follow a part's `nSecMir` partner by
 default -- BSF hulls are almost universally symmetric and the pairing is already
 recorded in the file -- and `--no-mirror` opts out.
+
+Edit verbs take a **section id bare** (`5`) and a **mount kind-prefixed**
+(`weapon:0`, `module:1`, `doodad:2`), because mount ids are only unique within a
+kind. A section edit carries its mounts (D18); a mount edit moves that mount
+alone, which is what placing a turret needs.
 """
 from __future__ import annotations
 
