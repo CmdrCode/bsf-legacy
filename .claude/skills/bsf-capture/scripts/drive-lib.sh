@@ -1,7 +1,7 @@
 #!/bin/bash
 # Shared helpers for BSF capture driver scripts. Source this file, then set
 # GAME to the scratch copy of the game dir before using the probe helpers.
-# Extracted from the proven 4K driver (_local/captures/drive-capture.sh).
+# Extracted from the proven 4K-resolution capture driver.
 #
 # Usage sketch:
 #   source "$(dirname "$0")/drive-lib.sh"

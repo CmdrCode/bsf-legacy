@@ -74,7 +74,9 @@ follows `bsf-capture`'s posture rather than `bsf-storytelling`'s.
     the point-defence weapon because `Flak_Platform` *is* one section and one
     PointMaser; every stock station carries a `NanoMatrix`. `stockship.py` reads
     any of the 63 shipped ships, so checking is cheap — do that before choosing
-    a part by eye.
+    a part by eye. It reads them out of the game's own GML, which is game-derived
+    and so lives outside this repo; `paths.py` resolves it from your install
+    (`$BSF_GML` overrides).
 18. **Never accept a baseline containing `floating`.** `--accept` is for known
     quirks, not for silencing a real defect. Fix, then accept.
 19. **Don't pin tests to mutable assets.** A gate that asserts facts about a
@@ -126,8 +128,10 @@ repo in the cache, so nothing is lost by trying something.
 
 An edit is finished when all of these hold:
 
-- `python3 roundtrip.py` still reports **175/175** byte-exact.
-- `python3 selftest.py` reports **0 failed**.
+- `python3 tools/bsf/roundtrip.py` still reports **175/175** byte-exact.
+- `python3 tools/bsf/selftest.py` reports **0 failed**.
+  (Both read stock ships from the game install, so they need one — the corpus
+  they walk is not in this repo.)
 - `ship check` reports nothing new against the baseline — and in particular
   **no `floating`**, which is never acceptable and never baseline-able.
 - The render has been *looked at*, not just produced.

@@ -17,10 +17,16 @@ automatically.)
 
 ## Sources of truth
 
-- `CAMPAIGN.html` — every shipped briefing, comm line and trigger, transcribed
-  verbatim from the game. The voice reference.
-- `campaign/ACT-II.md` (repo, `campaign_act_II` branch) — the Act II scenario.
-  Its Version 1 is the chosen treatment; Versions 2–3 were style explorations.
+- `campaign/ACT-II.md` — the Act II scenario, on `main`. Its Version 1 is the
+  chosen treatment; Versions 2–3 were style explorations.
+- **The eight shipped Act I episodes** — their briefings, comm lines and
+  triggers are what everything below was distilled from. **No transcript of them
+  is in this repo, and none can be**: the campaign text is the game's own, and
+  nothing extracted from Battleships Forever is ever committed here. Read the
+  episodes in the game to check a line against the original.
+
+The rest of this file is the distillation, so it stands on its own. You need the
+original only to verify a quotation, never to write to the voice.
 
 ## The form
 
@@ -81,9 +87,10 @@ count reaching zero, timer expiring). Write scenarios in that shape:
 | Logs (Cherenkov's log) | `$FFFFFF` white | italic in doc renders |
 | [Hint] | dim/grey | tutorial channel |
 
-For HTML docs, reuse CAMPAIGN.html's classes: `line hq / foe / alien / log /
+For HTML docs, use the campaign class system: `line hq / foe / alien / log /
 hint / obj`, tags `save / music / fail`, plus briefing card, deployment strip,
-and beat grid. The Act II artifact follows this system.
+and beat grid. Those names are the whole system — the Act II artifact follows
+it.
 
 ## Act II canon (established with the user, 2026-08)
 

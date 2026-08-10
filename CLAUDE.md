@@ -139,3 +139,7 @@ When mocking or iterating on game UI — menus, HUD, screens — follow
 fonts and real cropped art, logical 1365×768 coordinates in container units,
 headless-Chrome self-review against live captures, in-page variant pickers, and
 the mock→GML mapping rules.
+
+Like the engine library, that file sits under `_local/` — it builds on the
+game's own fonts and art, so it is untracked and not part of a clone. The
+summary above is the part that travels.

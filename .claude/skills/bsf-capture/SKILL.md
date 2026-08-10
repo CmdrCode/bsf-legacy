@@ -9,6 +9,15 @@ An evolving runbook, earned by trial and error — trust it over first instincts
 **After every capture session, fold what you learned back in**: rules and
 workflow here, details in [REFERENCE.md](REFERENCE.md).
 
+Three path conventions used throughout. `scripts/…` is **this skill's own**
+`scripts/` directory, not a repo-root one. Under `mods/…` the `*.gml` modules
+are the repo's, but every lever and report file beside them (`probe.txt`,
+`optreq`, `smres.txt`, …) is written and deleted at runtime inside the **staged
+scratch game dir** — none of them exist in a clone, and `touch`ing one is how
+you press a button. `_local/…` is the private side folder described in
+`CLAUDE.md`, git-ignored and likewise not part of a clone — what is named there
+is a local archive, never something to open.
+
 ## Hard rules (each one has ruined a take)
 
 1. The game runs inside a **wine virtual desktop**. The WM only sees the outer
@@ -36,8 +45,9 @@ workflow here, details in [REFERENCE.md](REFERENCE.md).
 4. **Drive** from a bash driver script: source
    [scripts/drive-lib.sh](scripts/drive-lib.sh) for `focus_game` / `glide` /
    `key` / `wait_probe` / `to_main_menu`; probe levers press buttons, arrow keys
-   work pickers, mouse glides are cosmetic but do track in-game. Proven worked
-   example: `_local/captures/drive-capture.sh` (the 4K resolution video).
+   work pickers, mouse glides are cosmetic but do track in-game. That library is
+   the reusable extract of the proven 4K-resolution driver — the complete
+   drivers stay archived with their footage (step 7).
 5. **Record** with x11grab, started from inside the driver script (capture
    command below), timed with sleeps around each beat. If captions are wanted,
    have the driver write a wall-clock marker log (see REFERENCE "Caption

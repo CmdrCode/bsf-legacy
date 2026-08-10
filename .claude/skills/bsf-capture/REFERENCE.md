@@ -5,6 +5,10 @@ monitors, 4K on DP-2). Dated notes mark when a fact was established; re-verify
 anything old if the desktop setup changes, and treat every geometry number here
 as belonging to that setup rather than to the tools.
 
+Paths follow [SKILL.md](SKILL.md)'s convention: `scripts/…` is this skill's own
+`scripts/` directory, and `_local/…` is the git-ignored private folder — named
+here to record where a take was archived, never as something a clone can open.
+
 ## Windows, focus, and the wine virtual desktop
 
 * The game normally runs inside a wine **virtual desktop** (set in the prefix
@@ -141,17 +145,18 @@ re-checking (see `to_main_menu` in scripts/drive-lib.sh).
 
 ## Caption cards — freeze-frame feature captions (2026-08-08)
 
-The part-picker demo (`_local/captures/shipmaker-part-picker-demo.mp4`) pauses
+The part-picker demo (archived as `shipmaker-part-picker-demo.mp4`) pauses
 5.5 s on a styled popup card before demonstrating each feature. The pipeline,
 all reusable:
 
 * **Cards**: `scripts/make-caption-card.py OUT.png TITLE [--key E] --line …`
   renders a full-frame transparent PNG in the house style — near-black panel
   `(6,12,6,238)`, 2 px `(0,170,0)` border + `(0,70,0)` inner hairline, radius
-  10, blurred drop shadow; title in the game's Visitor font
-  (`_local/mockups/visitor1.ttf`, 40 px, `(140,255,140)`) with an optional
-  keycap chip; body DejaVu Sans 27 px `(208,216,208)`; panel centered on x at
-  y≈400, which clears both the bottom quickbar and center-canvas action.
+  10, blurred drop shadow; title in the game's Visitor font (40 px,
+  `(140,255,140)`) with an optional keycap chip — that face ships with the game
+  rather than with this repo, so point `$BSF_VISITOR_TTF` at it; body DejaVu
+  Sans 27 px `(208,216,208)`; panel centered on x at y≈400, which clears both
+  the bottom quickbar and center-canvas action.
   **Reuse this script and its tokens for future videos — don't restyle.**
 * **Marker log in the driver**: `mark(){ echo "$(date +%s.%N) $1" >> marks.txt; }`
   called right before ffmpeg launch (`fflaunch`), at every card boundary, and
