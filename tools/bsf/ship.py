@@ -396,6 +396,35 @@ def do_parts(args) -> int:
 # entry
 # --------------------------------------------------------------------------
 
+#: Options whose value is an `x,y` pair and so may legitimately start with `-`.
+PAIR_OPTS = ('--to', '--by', '--at', '--scale')
+PAIR_RE = __import__('re').compile(r'^[-+]?\d*\.?\d+,[-+]?\d*\.?\d+$')
+
+
+def glue_pairs(argv: list[str]) -> list[str]:
+    """Let `--at -60,0` work as well as `--at=-60,0`.
+
+    argparse treats any token starting with `-` as an option unless it looks
+    like a plain negative number, and `-60,0` does not. Coordinates are half the
+    arguments this tool takes and half of those are negative -- y is down, so
+    anything above the centreline is -- which makes the bare form the one people
+    reach for first. Joining the pair back onto its flag here is narrower than
+    it looks: it only fires when the flag is one of the coordinate options and
+    the very next token is exactly a number pair.
+    """
+    out: list[str] = []
+    i = 0
+    while i < len(argv):
+        a = argv[i]
+        if a in PAIR_OPTS and i + 1 < len(argv) and PAIR_RE.match(argv[i + 1]):
+            out.append(f'{a}={argv[i + 1]}')
+            i += 2
+            continue
+        out.append(a)
+        i += 1
+    return out
+
+
 def parse_pair(s: str) -> tuple[float, float]:
     a, _, b = s.partition(',')
     return float(a), float(b)
@@ -519,7 +548,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument('--port', type=int, default=8771)
     p.add_argument('--bind', default='127.0.0.1')
 
-    args = ap.parse_args(argv)
+    args = ap.parse_args(glue_pairs(sys.argv[1:] if argv is None else argv))
     if args.cmd == 'parts':
         return do_parts(args)
 
