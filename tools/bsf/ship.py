@@ -257,7 +257,8 @@ def print_tree(ship: model.Ship, as_json: bool = False) -> None:
               ', '.join(str(s.id) for s in orphans))
 
 
-def do_structural(ship: model.Ship, edits, args) -> tuple[list[str], str]:
+def do_structural(ship: model.Ship, edits, args,
+                  sid: int | None = None) -> tuple[list[str], str]:
     """Dispatch the record-creating and record-destroying verbs.
 
     They are grouped apart from move/rotate/flip because they are the ones that
@@ -278,6 +279,13 @@ def do_structural(ship: model.Ship, edits, args) -> tuple[list[str], str]:
             done += [f'  mirrored as {m}' for m in made] + [f'  {n}' for n in mnotes]
         return done, f'add {args.sprite} at {x:+g},{y:+g}'
 
+    if args.cmd == 'arm':
+        x, y = parse_pair(args.at)
+        wid, notes = edits.add_weapon(ship, args.weapon, x, y,
+                                      parent=args.parent, angle=args.angle,
+                                      arc=args.arc, mirror=args.mirror)
+        return [f'  {n}' for n in notes], f'arm {args.weapon} at {x:+g},{y:+g}'
+
     if args.cmd == 'mirror':
         if ship.section(args.id) is None:
             raise edits.EditError(f'no section {args.id}')
@@ -287,14 +295,16 @@ def do_structural(ship: model.Ship, edits, args) -> tuple[list[str], str]:
         return done, f'mirror {args.id}'
 
     if args.cmd == 'remove':
-        if ship.section(args.id) is None:
-            raise edits.EditError(f'no section {args.id}')
+        target = sid if sid is not None else int(args.id)
+        if ship.section(target) is None:
+            raise edits.EditError(f'no section {target}')
         gone, warn = edits.remove_section(
-            ship, args.id, orphan=args.orphan, mirror=mirror)
-        return gone + [f'⚠ {w}' for w in warn], f'remove {args.id}'
+            ship, target, orphan=args.orphan, mirror=mirror)
+        return gone + [f'⚠ {w}' for w in warn], f'remove {target}'
 
-    done = edits.reparent(ship, args.id, args.to, mirror=mirror)
-    return done, f'reparent {args.id} to {args.to}'
+    rid = int(args.id)
+    done = edits.reparent(ship, rid, args.to, mirror=mirror)
+    return done, f'reparent {rid} to {args.to}'
 
 
 def print_selection(ship: model.Ship, matches, rendered: bool,
@@ -425,6 +435,50 @@ def glue_pairs(argv: list[str]) -> list[str]:
     return out
 
 
+def do_mount_edit(ship: model.Ship, edits, args, kind: str, mid: int,
+                  mirror: bool) -> tuple[list[str], str]:
+    """move / rotate / remove aimed at a single mounted part.
+
+    The counterpart to D18: a section edit carries its mounts, but positioning a
+    turret on a hull is its own job and needs the mount to move by itself.
+    """
+    if args.cmd == 'move':
+        if args.by:
+            dx, dy = parse_pair(args.by)
+        else:
+            cur = edits.find_mount(ship, kind, mid)
+            if cur is None:
+                raise edits.EditError(f'no {kind} {mid}')
+            tx, ty = parse_pair(args.to)
+            dx, dy = tx - cur.x, ty - cur.y
+        return (edits.move_mount(ship, kind, mid, dx, dy, mirror=mirror),
+                f'move {kind} {mid} by {dx:+g},{dy:+g}')
+    if args.cmd == 'rotate':
+        return (edits.rotate_mount(ship, kind, mid, args.by, mirror=mirror),
+                f'rotate {kind} {mid} by {args.by:+g}')
+    if args.cmd == 'remove':
+        return (edits.remove_mount(ship, kind, mid, mirror=mirror),
+                f'remove {kind} {mid}')
+    raise edits.EditError(f'{args.cmd} does not apply to a {kind}')
+
+
+def parse_target(s: str) -> tuple[str, int]:
+    """`5` is a section; `weapon:0`, `module:1`, `doodad:2` name a mount.
+
+    Sections are what most edits act on, so they stay unprefixed. Mounts need
+    the prefix because their ids only have to be unique within a kind -- a
+    section 0 and a weapon 0 are both perfectly ordinary.
+    """
+    if ':' in s:
+        kind, _, num = s.partition(':')
+        kind = kind.strip().lower()
+        if kind not in model.MOUNTS:
+            raise ValueError(f'unknown part kind {kind!r}; '
+                             f'expected one of {", ".join(model.MOUNTS)}')
+        return kind, int(num)
+    return 'section', int(s)
+
+
 def parse_pair(s: str) -> tuple[float, float]:
     a, _, b = s.partition(',')
     return float(a), float(b)
@@ -440,7 +494,7 @@ def main(argv: list[str] | None = None) -> int:
         return p
 
     def with_edit(p):
-        p.add_argument('id', type=int, help='section id')
+        p.add_argument('id', help='section id, or weapon:N / module:N / doodad:N')
         with_file(p)
         p.add_argument('--with-children', action='store_true',
                        help='apply to the section and its whole subtree')
@@ -490,13 +544,25 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument('--mirror', action='store_true',
                    help='also create the reflected partner')
 
+    p = sub.add_parser('arm', help='mount a weapon')
+    p.add_argument('weapon', help='game object name, e.g. PointMaser, Blaster, '
+                                  'ParticleGun, NanoMatrix')
+    with_file(p)
+    p.add_argument('--at', required=True, metavar='X,Y',
+                   help='core-relative position (y is down)')
+    p.add_argument('--parent', type=int, default=0, help='section to mount on')
+    p.add_argument('--angle', type=float, default=0.0)
+    p.add_argument('--arc', type=float, help='firing arc range')
+    p.add_argument('--mirror', action='store_true',
+                   help='also mount the reflected twin')
+
     p = sub.add_parser('mirror', help='create a section\'s reflected partner')
     p.add_argument('id', type=int)
     with_file(p)
     p.add_argument('--with-children', action='store_true')
 
     p = sub.add_parser('remove', help='delete a section and what hangs off it')
-    p.add_argument('id', type=int)
+    p.add_argument('id', help='section id, or weapon:N / module:N / doodad:N')
     with_file(p)
     p.add_argument('--orphan', action='store_true',
                    help='reparent the children instead of deleting them')
@@ -652,31 +718,46 @@ def main(argv: list[str] | None = None) -> int:
             print(f'✗ {e}', file=sys.stderr)
             return 2
         changed, msg = [f'{was!r} -> {ship.name!r}'], f'name to {args.to}'
-    elif args.cmd in ('add', 'mirror', 'remove', 'reparent'):
+    elif args.cmd in ('add', 'arm', 'mirror', 'reparent'):
         import edits
         try:
             changed, msg = do_structural(ship, edits, args)
         except edits.EditError as e:
             print(f'✗ {e}', file=sys.stderr)
             return 2
-    elif ship.section(args.id) is None:
-        print(f'no section {args.id} in {path.name}', file=sys.stderr)
-        return 2
-    elif args.cmd == 'move':
-        if args.by:
-            dx, dy = parse_pair(args.by)
-        else:
-            tx, ty = parse_pair(args.to)
-            cur = ship.section(args.id)
-            dx, dy = tx - cur.x, ty - cur.y
-        changed = do_move(ship, args.id, dx, dy, args.with_children, mirror)
-        msg = f'move {args.id} by {dx:+g},{dy:+g}'
-    elif args.cmd == 'rotate':
-        changed = do_rotate(ship, args.id, args.by, args.with_children, mirror)
-        msg = f'rotate {args.id} by {args.by:+g}'
     else:
-        changed = do_flip(ship, args.id, args.axis, args.with_children, mirror)
-        msg = f'flip {args.id} on {args.axis}'
+        import edits
+        try:
+            kind, num = parse_target(str(args.id))
+        except ValueError as e:
+            print(f'✗ {e}', file=sys.stderr)
+            return 2
+        try:
+            if kind != 'section':
+                changed, msg = do_mount_edit(ship, edits, args, kind, num, mirror)
+            elif ship.section(num) is None:
+                print(f'no section {num} in {path.name}', file=sys.stderr)
+                return 2
+            elif args.cmd == 'remove':
+                changed, msg = do_structural(ship, edits, args, sid=num)
+            elif args.cmd == 'move':
+                if args.by:
+                    dx, dy = parse_pair(args.by)
+                else:
+                    tx, ty = parse_pair(args.to)
+                    cur = ship.section(num)
+                    dx, dy = tx - cur.x, ty - cur.y
+                changed = do_move(ship, num, dx, dy, args.with_children, mirror)
+                msg = f'move {num} by {dx:+g},{dy:+g}'
+            elif args.cmd == 'rotate':
+                changed = do_rotate(ship, num, args.by, args.with_children, mirror)
+                msg = f'rotate {num} by {args.by:+g}'
+            else:
+                changed = do_flip(ship, num, args.axis, args.with_children, mirror)
+                msg = f'flip {num} on {args.axis}'
+        except edits.EditError as e:
+            print(f'✗ {e}', file=sys.stderr)
+            return 2
 
     if not ship.dirty:
         print('no change')

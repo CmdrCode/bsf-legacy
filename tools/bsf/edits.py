@@ -31,6 +31,8 @@ import sys
 import pathlib
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+
+import paths    # noqa: E402
 import model     # noqa: E402
 import sprites   # noqa: E402
 
@@ -325,6 +327,179 @@ def add_section(ship: model.Ship, sprite: str, x: float, y: float, *,
         notes.append('no donor: this section has no nSecB/C/D/Tr records, so '
                      'ShipMaker will load it with its own defaults')
     return sid, notes
+
+
+# --------------------------------------------------------------------------
+# weapons
+# --------------------------------------------------------------------------
+
+#: A real weapon, to clone the unrecovered tail of `nWepB` and friends from.
+WEAPON_DONOR = paths.PENDULUM
+
+
+def weapon_template(ship: model.Ship) -> dict[str, list[str]]:
+    """Token lists for one real weapon's records.
+
+    `nWepA` is understood field by field, but `nWepB` past `parent.secid` and
+    all of `nWepC/D/Tr` were never recovered -- so a new weapon clones them from
+    an existing one rather than inventing values, exactly as a new section
+    clones its tier-2 records from a donor section (D16). A weapon already on
+    the ship is the best donor; failing that, one off a real ship on disk.
+    """
+    for src in (ship, None):
+        s = src
+        if s is None:
+            if not WEAPON_DONOR.exists():
+                return {}
+            s = model.load(WEAPON_DONOR)
+        ids = [int(r.num(0)) for r in s.of_kind('nWepA')]
+        if not ids:
+            continue
+        wid = ids[0]
+        out: dict[str, list[str]] = {}
+        for r in s.records:
+            if (r.kind.startswith('nWep') and r.kind != 'nWepMir'
+                    and _int(r, 0) == wid):
+                out.setdefault(r.kind, list(r.tokens))
+        if 'nWepA' in out:
+            return out
+    return {}
+
+
+def add_weapon(ship: model.Ship, obj: str, x: float, y: float, *,
+               parent: int = 0, angle: float = 0.0, arc: float | None = None,
+               mirror: bool = False) -> tuple[int, list[str]]:
+    """Mount a weapon at a core-relative position. Returns (wepid, notes).
+
+    `obj` is the game's own object name -- `PointMaser`, `Blaster`,
+    `ParticleGun`, `NanoMatrix` -- which is what `nWepA[3]` stores and what the
+    sprite resolver already knows how to find.
+    """
+    sp, _path, _note = sprites.best(obj, mask=False, pivot=True)
+    if sp is None:
+        raise EditError(f'no sprite resolves to weapon {obj!r}')
+    if parent and ship.section(parent) is None:
+        raise EditError(f'no section {parent} to mount on')
+    tpl = weapon_template(ship)
+    if 'nWepA' not in tpl:
+        raise EditError('no weapon to clone the unmodelled nWep fields from')
+
+    notes: list[str] = []
+    wid = next_mount_id(ship, 'weapon')
+    after = _last_record(ship, tuple(tpl))
+    a = list(tpl['nWepA'])
+    a[0] = str(wid)
+    a[1] = model.gmstr(ship.core_x + x)
+    a[2] = model.gmstr(ship.core_y + y)
+    a[3] = obj
+    a[6] = model.gmstr(angle)
+    after = ship.add_record('nWepA', a, after)
+    if 'nWepB' in tpl:
+        b = list(tpl['nWepB'])
+        b[0] = str(wid)
+        b[1] = str(parent)
+        if arc is not None and len(b) > 2:
+            b[2] = model.gmstr(arc)
+        after = ship.add_record('nWepB', b, after)
+    for kind in ('nWepC', 'nWepD', 'nWepTr'):
+        if kind in tpl:
+            t = list(tpl[kind])
+            t[0] = str(wid)
+            after = ship.add_record(kind, t, after)
+    notes.append(f'{obj} {wid} at {x:+g},{y:+g} on '
+                 f'{"the core" if not parent else f"section {parent}"}')
+
+    if mirror and abs(y) >= 1:
+        twin = next_mount_id(ship, 'weapon')
+        pm = ship.mirrors.get(parent, model.UNMIRRORED)
+        host = pm if pm >= 0 else parent
+        a2 = list(a)
+        a2[0] = str(twin)
+        a2[2] = model.gmstr(ship.core_y - y)
+        a2[6] = model.gmstr(-angle)          # weapons negate angle, never yscale
+        after = ship.add_record('nWepA', a2, after)
+        if 'nWepB' in tpl:
+            b2 = list(tpl['nWepB'])
+            b2[0] = str(twin)
+            b2[1] = str(host)
+            if arc is not None and len(b2) > 2:
+                b2[2] = model.gmstr(arc)
+            after = ship.add_record('nWepB', b2, after)
+        for kind in ('nWepC', 'nWepD', 'nWepTr'):
+            if kind in tpl:
+                t = list(tpl[kind])
+                t[0] = str(twin)
+                after = ship.add_record(kind, t, after)
+        _pair(ship, 'weapon', wid, twin)
+        notes.append(f'mirrored as {twin} at {x:+g},{-y:+g}')
+    return wid, notes
+
+
+def find_mount(ship: model.Ship, kind: str, mid: int) -> model.Mount | None:
+    for m in ship.mounts:
+        if m.kind == kind and m.id == mid:
+            return m
+    return None
+
+
+def move_mount(ship: model.Ship, kind: str, mid: int, dx: float, dy: float, *,
+               mirror: bool = True) -> list[str]:
+    """Nudge one mounted part on its own, without moving its section.
+
+    The counterpart to D18: a section edit carries its mounts, but placing a
+    turret on a hull is its own operation and needs the mount to move alone.
+    """
+    m = find_mount(ship, kind, mid)
+    if m is None:
+        raise EditError(f'no {kind} {mid}')
+    done = []
+    m.set_pos(round(m.x + dx, 2), round(m.y + dy, 2))
+    done.append(f'{kind} {mid} -> {m.x:+g},{m.y:+g}')
+    if mirror:
+        partner = ship.mirror_map(kind).get(mid, model.UNMIRRORED)
+        tw = find_mount(ship, kind, partner) if partner >= 0 else None
+        if tw is not None and tw is not m:
+            tw.set_pos(round(tw.x + dx, 2), round(tw.y - dy, 2))
+            done.append(f'{kind} {partner} -> {tw.x:+g},{tw.y:+g}  (mirror)')
+    return done
+
+
+def rotate_mount(ship: model.Ship, kind: str, mid: int, by: float, *,
+                 mirror: bool = True) -> list[str]:
+    m = find_mount(ship, kind, mid)
+    if m is None:
+        raise EditError(f'no {kind} {mid}')
+    done = []
+    m.angle = round((m.angle + by) % 360, 2)
+    done.append(f'{kind} {mid} -> {m.angle:g}deg')
+    if mirror:
+        partner = ship.mirror_map(kind).get(mid, model.UNMIRRORED)
+        tw = find_mount(ship, kind, partner) if partner >= 0 else None
+        if tw is not None and tw is not m:
+            tw.angle = round((tw.angle - by) % 360, 2)
+            done.append(f'{kind} {partner} -> {tw.angle:g}deg  (mirror)')
+    return done
+
+
+def remove_mount(ship: model.Ship, kind: str, mid: int, *,
+                 mirror: bool = True) -> list[str]:
+    """Unbolt one mounted part, and its reflected twin unless told otherwise."""
+    m = find_mount(ship, kind, mid)
+    if m is None:
+        raise EditError(f'no {kind} {mid}')
+    victims = [mid]
+    if mirror:
+        partner = ship.mirror_map(kind).get(mid, model.UNMIRRORED)
+        if partner >= 0 and partner != mid and find_mount(ship, kind, partner):
+            victims.append(partner)
+    doomed: list[model.Record] = []
+    gone = []
+    for v in victims:
+        mv = find_mount(ship, kind, v)
+        gone.append(f'removed {kind} {v} ({mv.name})')
+        doomed += owned_records(ship, kind, v)
+    ship.drop_records(doomed)
+    return gone
 
 
 # --------------------------------------------------------------------------
