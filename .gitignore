@@ -67,8 +67,30 @@ toolchain/
 __pycache__/
 *.pyc
 
-# Local-only notes, per-machine git hooks, and Claude Code config
-# (.claude/ holds local skills/commands and Claude-managed worktrees)
-/CLAUDE.md
+# Per-machine git hooks, and the root symlink to the local half of CLAUDE.md
+# (the file itself lives under _local/, which is already excluded above).
 /.githooks/
-/.claude/
+/CLAUDE.local.md
+
+# Claude Code config. The skills and slash commands ARE part of this repo, but
+# they are named one at a time rather than re-included wholesale. Everything
+# else that lands under .claude/ -- a personal command, a skill belonging to
+# other work, a scratch note, the worktrees managed here -- then stays out by
+# default rather than arriving in the next `git add -A`. Adding a skill costs
+# one line here, and forgetting it means the skill is missing (which you notice)
+# instead of something private being published (which you might not).
+#
+# Each directory has to be un-excluded by name for two reasons: git cannot
+# re-include a file whose parent directory is excluded, and the bsf-*/ rule
+# above -- meant for scratch copies of the game dir -- matches every skill
+# folder as well.
+/.claude/*
+!/.claude/commands/
+/.claude/commands/*
+!/.claude/commands/git_branch_status.md
+!/.claude/commands/git_commit_merge_wt.md
+!/.claude/skills/
+/.claude/skills/*
+!/.claude/skills/bsf-ships/
+!/.claude/skills/bsf-capture/
+!/.claude/skills/bsf-storytelling/
