@@ -234,6 +234,42 @@ def test_name_survives_both_generations():
         ok(True, 'a comma in a name is refused')
 
 
+def test_stock_ship_import():
+    """sh1 declares attachment backwards; the importer has to invert it."""
+    import stockship
+    if not stockship.GML.exists():
+        return
+    spec = stockship.read('Hestia')
+    ok(len(spec['sections']) == 6, 'Hestia parses as 6 sections',
+       str(len(spec['sections'])))
+    ok(len(spec['weapons']) == 8, 'Hestia parses as 8 weapons',
+       str(len(spec['weapons'])))
+    # `l_section[1].l_child[...] = l_section[0]` means 1 owns 0, not the reverse.
+    ok(spec['parent'].get(0) == 1 and spec['parent'].get(3) == 4,
+       'child links invert into parent links', str(spec['parent']))
+    ok(spec['wparent'].get(2) == 2, 'weapons resolve to their host section',
+       str(spec['wparent']))
+
+    p = scratch(PENDULUM)
+    sh = model.load(p)
+    before = len(sh.sections)
+    root, ids = stockship.dock(sh, 'Hestia', 300, 0, tint=stockship.DAMAGE_TINT)
+    ok(len(sh.sections) == before + 7, 'docking adds the hull plus a core section',
+       f'{before} -> {len(sh.sections)}')
+    ok(sh.section(root) is not None and sh.section(root).parent == 0,
+       'the moored hull hangs off one root')
+    ok(all(sh.section(i).colour == stockship.DAMAGE_TINT
+           for i in ids if sh.section(i)), 'every moored part carries the tint')
+    ok(len(sh.weapons) > 0, 'moored hull keeps its turrets', str(len(sh.weapons)))
+
+    # removing the root must take the whole wreck -- sections and weapons
+    edits.remove_section(sh, root, mirror=False)
+    ok(len(sh.sections) == before, 'removing the root removes the whole hull',
+       f'{len(sh.sections)} vs {before}')
+    ok(len(sh.weapons) == len(model.load(p).weapons),
+       'and its turrets go with it')
+
+
 def test_new_ids_never_reuse_a_gap():
     p = scratch(PENDULUM)
     sh = model.load(p)
