@@ -542,14 +542,34 @@ class Ship:
         return c.num(7) if c else 0.0
 
     # -- ship header -------------------------------------------------------
+    #: `l_name` sits at token 6 in both `nShp` (sb4) and `nShp2` (sh3): sb4
+    #: prefixes thrust and sh3 keeps an unused field, and the two cancel out.
+    NAME = 6
+
     @property
     def name(self) -> str:
+        """The ship's display name, as the game's UI shows it.
+
+        sh3 quotes the value and sb4 does not, so the quotes are stripped here
+        and put back on write -- otherwise a name read from one generation and
+        written to the other grows or loses a pair.
+        """
         r = self.first('nShp', 'nShp2')
         if r is None:
             return self.path.stem
-        # sb4 prefixes thrust and drops sh3's unused 6th field, so the name sits
-        # one position later than in sh3's nShp2.
-        return r.txt(6 if self.generation == 'sb4' else 6).strip()
+        return r.txt(self.NAME).strip().strip('"')
+
+    @name.setter
+    def name(self, v: str) -> None:
+        r = self.first('nShp', 'nShp2')
+        if r is None:
+            raise ValueError(f'{self.path.name} has no nShp record to name')
+        old = r.txt(self.NAME)
+        # A comma would split the field into two on the next read, and the
+        # loader has no escaping for it.
+        if ',' in v:
+            raise ValueError('a ship name cannot contain a comma')
+        r.set_txt(self.NAME, f'"{v}"' if old.strip().startswith('"') else v)
 
     # -- sections ----------------------------------------------------------
     @property

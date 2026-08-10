@@ -207,6 +207,33 @@ def test_remove_cascade():
        'dangling nTrigS is reported', str(warn))
 
 
+def test_name_survives_both_generations():
+    """sh3 quotes l_name and sb4 does not; neither may grow or lose a pair."""
+    shp = BOLTHOLE.with_suffix('.shp')
+    for src in (BOLTHOLE, shp if shp.exists() else BOLTHOLE):
+        p = scratch(src)
+        sh = model.load(p)
+        was, tokens = sh.name, len(sh.first('nShp', 'nShp2').tokens)
+        ok('"' not in was, f'{src.suffix}: name reads unquoted', repr(was))
+        sh.name = 'test_rename'
+        p.write_bytes(sh.to_bytes())
+        again = model.load(p)
+        ok(again.name == 'test_rename', f'{src.suffix}: name round-trips',
+           repr(again.name))
+        ok(len(again.first('nShp', 'nShp2').tokens) == tokens,
+           f'{src.suffix}: renaming does not disturb the other fields')
+        raw = again.first('nShp', 'nShp2').txt(model.Ship.NAME)
+        quoted = src.suffix == '.shp'
+        ok(raw.startswith('"') == quoted,
+           f'{src.suffix}: quoting matches the generation', repr(raw))
+    sh = model.load(scratch(BOLTHOLE))
+    try:
+        sh.name = 'has,comma'
+        ok(False, 'a comma in a name is refused')
+    except ValueError:
+        ok(True, 'a comma in a name is refused')
+
+
 def test_new_ids_never_reuse_a_gap():
     p = scratch(PENDULUM)
     sh = model.load(p)

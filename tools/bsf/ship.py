@@ -479,6 +479,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument('--to', type=int, required=True, help='new parent, 0 for core')
     p.add_argument('--no-mirror', action='store_true')
 
+    p = sub.add_parser('name', help="show or set the ship's display name")
+    with_file(p)
+    p.add_argument('to', nargs='?', help='the new name; omit to just show it')
+
     p = with_file(sub.add_parser('check', help='lint the ship'))
     p.add_argument('--accept', action='store_true',
                    help='record the current findings as the known baseline')
@@ -557,6 +561,10 @@ def main(argv: list[str] | None = None) -> int:
                   f'  -> {args.shot}')
         return 0
 
+    if args.cmd == 'name' and not args.to:
+        print(model.load(path).name)
+        return 0
+
     if args.cmd == 'check':
         import check
         return check.report(path, model.load(path),
@@ -607,7 +615,15 @@ def main(argv: list[str] | None = None) -> int:
     ship = model.load(path)
     mirror = not getattr(args, 'no_mirror', False)
 
-    if args.cmd in ('add', 'mirror', 'remove', 'reparent'):
+    if args.cmd == 'name':
+        was = ship.name
+        try:
+            ship.name = args.to
+        except ValueError as e:
+            print(f'✗ {e}', file=sys.stderr)
+            return 2
+        changed, msg = [f'{was!r} -> {ship.name!r}'], f'name to {args.to}'
+    elif args.cmd in ('add', 'mirror', 'remove', 'reparent'):
         import edits
         try:
             changed, msg = do_structural(ship, edits, args)
