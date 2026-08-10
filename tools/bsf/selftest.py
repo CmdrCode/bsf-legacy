@@ -266,16 +266,35 @@ def test_query_grammar():
 
 
 def test_check_and_baseline():
+    """Assert the mechanism, not the reference hull's current geometry.
+
+    An earlier version pinned D20's calibration directly -- "seven pairs drift
+    on station_bolthole, all by whole pixels" -- which was true of the ship as
+    found and stopped being true the moment someone edited it. A gate that
+    breaks when the asset it measures is legitimately improved is measuring the
+    wrong thing. The drift is introduced here instead, so the magnitude under
+    test is known by construction.
+    """
     p = scratch(BOLTHOLE)
     sh = model.load(p)
     found, _an = check.run(sh)
-    pairs = {f.subject for f in found if f.code == 'mirror'}
-    # D20's calibration: seven pairs drift, all by exactly 1 or 2 whole pixels.
-    ok(len(pairs) == 7, 'seven mirror pairs drift on the reference hull',
-       str(sorted(pairs)))
-    mags = {abs(float(f.detail.split()[-1])) for f in found if f.code == 'mirror'}
-    ok(mags <= {1.0, 2.0}, 'drift is whole-pixel, never fractional', str(mags))
     ok(not any(f.code == 'floating' for f in found), 'reference hull is connected')
+
+    pair = next(((a, b) for a, b in sh.mirrors.items()
+                 if b > a and sh.section(a) and sh.section(b)), None)
+    ok(pair is not None, 'the reference hull has a mirror pair to test with')
+    if pair:
+        a, b = pair
+        sec = sh.section(a)
+        sec.set_pos(round(sec.x + 3, 2), sec.y)     # a known 3px x deviation
+        p.write_bytes(sh.to_bytes())
+        found, _an = check.run(model.load(p))
+        hits = [f for f in found
+                if f.code == 'mirror' and f.subject == f'sections {a}/{b}']
+        ok(any('dx' in f.detail and abs(abs(float(f.detail.split()[-1])) - 3) < .01
+               for f in hits),
+           'check reports the exact magnitude of a mirror deviation',
+           str([f.detail for f in hits]))
 
     import history
     history.write_baseline(p, [f.key for f in found])
