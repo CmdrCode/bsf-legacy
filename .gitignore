@@ -80,10 +80,15 @@ toolchain/
 __pycache__/
 *.pyc
 
-# campaign/build.py's own output. The .gml it emits is already covered above as
-# a file generated from the game's GML; this is the rest of what it writes -- the
-# beat-script viewer. Same rule, different reason: ship the generator, never its
-# output. The mission YAML beside it is the source and stays tracked.
+# campaign/build.py's beat-script viewer. Ship the generator, never its output:
+# the mission YAML beside it is the source and stays tracked, and this is only a
+# regenerable view of it.
+#
+# ⚠ build.py's *other* output, mods/act2m1.gml, IS tracked -- and the difference
+# is what gets shipped, not where it came from. tools/install.py bundles all of
+# mods/ into the installer and unpacks it into the player's game, so the emitted
+# module belongs in the repo like every hand-written one beside it. Neither file
+# is derived from the game's own GML; those are listed by name further up.
 campaign/out/
 
 # Per-machine git hooks, and the root symlink to the local half of CLAUDE.md
