@@ -26,6 +26,8 @@ ship remove     <id> <file> [--orphan] [--no-mirror]
 ship reparent   <id> <file> --to N [--no-mirror]
 ship arm        '<object>' <file> --at X,Y [--parent N] [--angle A]
                                      [--arc R] [--mirror]
+ship colour     <id|all> <file> (--to '#RRGGBB' | --team 0|1|2)
+                                     [--with-children] [--no-mirror]
 ship name       <file> [NEW]           show the display name, or set it
 ship parts      list|sheet|near|build
 ship log <file> / diff <file> <rev> / undo <file>
@@ -212,7 +214,58 @@ Other things that will bite:
 - **GM colours are BGR.** `8454016` = `0x80FF80` = rgb(128,255,128). `$FF2222`
   is blue — which is what makes deflectors and boosters read as glowing beads.
 - **Sections are two-tone masks** multiplied by a team colour. Converting one
-  naively to RGBA yields a black square.
+  naively to RGBA yields a black square. The fill tone is 47/255 and the edge
+  255, so a section drawn in `#AFBECE` reads as a near-black body with a pale
+  steel outline. Pick the colour you want the **outline** to be.
+- **A mirror pair sits at adjacent depths.** 69 of 73 pairs on disk differ by
+  exactly 1, and the four that do not carry hand-set values. **(data)**
+  `ship mirror` inserts the twin immediately behind its partner and pushes
+  everything deeper back one; it used to hand out `next_depth()`, which put the
+  reflection at the very back of the stack and drew one of four identical spar
+  caps behind the spar the other three sat in front of.
+
+### Mount stats, and the `-1` sentinel
+
+`nWep2a` and `nMod2` both test each stat against `-1` before assigning it, so
+`-1` means *keep whatever the object's own Create event set* — not "missing".
+**(GML)** `ship arm` writes `-1` throughout, which is why a mount fights like
+the object it names rather than like the donor it was cloned from.
+
+| record | `-1`-guarded fields |
+|---|---|
+| `nWep2a` | firingrate, firingclip, firingreload, damage, turning, deviation, hp, range, bulletcol, bulletspeed, specials 1–5 (`l_name` uses `""`) |
+| `nMod2` | cost, eng, engregen, hp, range, specials 1–8 (`l_name` uses `""`) |
+| `nTur2` | **none** — `l_arcrange` and `l_arcoffset` are assigned flat |
+
+Two consequences worth keeping:
+
+- **A zero is not a `-1`.** `0 != -1`, so writing zeros *overrides*, and a
+  NanoMatrix with range 0 repairs nothing while looking exactly like one that
+  works. `sprites.MODULE_DEFAULTS` holds the values measured in a running game;
+  anything absent from it is written in `-1`s and behaves stock, which is why
+  an unmeasured module mounts fine.
+- **`arcrange` has to be stated.** `ship arm` defaults to 180 (the full circle)
+  and `--arc` narrows it. Nothing else on a mount needs a real number.
+
+### Fixing a section's colour
+
+A section does not normally own its colour: `l_colourmod` indexes the team's
+three-shade palette and the game tints by whichever team the hull spawns into.
+`-1` is the escape hatch — ShipMaker offers it as *"2. Custom Color"* — and then
+`l_colour` beside it is the literal GM colour. `ship colour` is the supported
+way to set it, because **the value lives in two places and needs both**:
+
+| where | field | who reads it |
+|---|---|---|
+| `nSecA[11]` | `image_blend` | ShipMaker's canvas, `ship render`, `ship serve` |
+| `nSecB[12]`/`[13]` | `l_colourmod`/`l_colour` | `ship export`, and so the game |
+
+`export` appends `l_colour` as `nSec2a`'s optional **eleventh** field, but only
+when `l_colourmod` is `-1`; the game's `nSec2a` closes with `if argument10 = 0
+then l_colour = global.colour[…] else l_colour = argument10`. **(GML)** So
+writing `image_blend` alone — the obvious edit, and the one `stockship` makes
+for its wreck tint — gives a design that is the right colour in every picture
+and the team's colour in the only place that counts.
 - **Exe frames arrive already keyed.** Their alpha is resolved; re-running GM's
   bottom-left keying over them throws it away.
 - **`destination-in` composites against the whole canvas**, not the sprite being

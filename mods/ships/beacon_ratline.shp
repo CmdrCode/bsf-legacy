@@ -1,0 +1,100 @@
+//sh3 ver2
+
+//STARTING!
+sprite_index,spr_Platform
+nCor2a
+event_inherited
+//COLOR SETTINGS
+l_fadecol,4210752
+//PROPERTIES
+//Movement Properties
+l_thrust,0.01
+nShp2,0,0.01,400,350,0,0,"Ratline Beacon"," ",75.33
+
+//SHIP SYSTEMS\\
+//SECTIONS
+nSec2a,0,47,"Sections\Ixr_sec04.png",1,-1,-90,-1,1,1,-1,11312269
+nSec2b,0,60,60,0,-180,180,0,0,0,0
+nSec2c,0,1,0,0.03,0.03,0,0,1,0,0,0,255,0,0,1.10,-1.10
+nSec2M,100,0,50,50,0,0,0,0,0
+nSecT,0,0,0,0,0,0,0,90,90
+nSec2d,0,1
+nSec2a,0,-47,"Sections\Ixr_sec04.png",1,1,90,-1,1,1,-1,11312269
+nSec2b,0,60,60,0,-180,180,0,0,-1,0
+nSec2c,0,1,0,0.03,0.03,0,0,1,0,0,0,255,0,0,1.10,1.10
+nSec2M,100,0,50,50,0,0,0,0,0
+nSecT,0,0,0,0,0,0,0,90,90
+nSec2d,0,1
+nSec2a,-47,0,"Sections\Ixr_sec04.png",1,1,0,-1,1,1,-1,11312269
+nSec2b,0,60,60,0,-180,180,0,0,-1,0
+nSec2c,0,1,0,0.03,0.03,0,0,1,0,0,0,255,0,0,1.10,1.10
+nSec2M,100,0,50,50,0,0,0,0,0
+nSecT,0,0,0,0,0,0,0,90,90
+nSec2d,0,1
+nSec2a,47,0,"Sections\Ixr_sec04.png",1,1,0,-1,1,1,-1,11312269
+nSec2b,0,60,60,0,-180,180,0,0,-1,0
+nSec2c,0,1,0,0.03,0.03,0,0,1,0,0,0,255,0,0,1.10,1.10
+nSec2M,100,0,50,50,0,0,0,0,0
+nSecT,0,0,0,0,0,0,0,90,90
+nSec2d,0,1
+nSec2a,0,0,"Sections\Syn_sec02.png",1,1,0,-1,1,1,-1,13549231
+nSec2b,0,60,60,0,-180,180,0,0,-1,0
+nSec2c,0,1,0,0.03,0.03,0,0,1,0,0,0,255,0,0,1.10,1.10
+nSec2M,100,0,50,50,0,0,0,0,0
+nSecT,0,0,0,0,0,0,0,90,90
+nSec2d,0,1
+nSec2a,0,68,"Kae_small\Kae_sec145.png",1,-1,0,-1,1,1,-1,9075565
+nSec2b,0,60,60,0,-180,180,0,0,0,0
+nSec2c,0,1,0,0.03,0.03,0,0,1,0,0,0,255,0,0,1.10,-1.10
+nSec2M,100,0,50,50,0,0,0,0,0
+nSecT,0,0,0,0,0,0,0,90,90
+nSec2d,0,1
+nSec2a,0,-68,"Kae_small\Kae_sec145.png",1,1,0,-1,1,1,-1,9075565
+nSec2b,0,60,60,0,-180,180,0,0,-1,0
+nSec2c,0,1,0,0.03,0.03,0,0,1,0,0,0,255,0,0,1.10,1.10
+nSec2M,100,0,50,50,0,0,0,0,0
+nSecT,0,0,0,0,0,0,0,90,90
+nSec2d,0,1
+nSec2a,-68,0,"Kae_small\Kae_sec145.png",1,1,0,-1,1,1,-1,9075565
+nSec2b,0,60,60,0,-180,180,0,0,-1,0
+nSec2c,0,1,0,0.03,0.03,0,0,1,0,0,0,255,0,0,1.10,1.10
+nSec2M,100,0,50,50,0,0,0,0,0
+nSecT,0,0,0,0,0,0,0,90,90
+nSec2d,0,1
+nSec2a,68,0,"Kae_small\Kae_sec145.png",1,1,0,-1,1,1,-1,9075565
+nSec2b,0,60,60,0,-180,180,0,0,-1,0
+nSec2c,0,1,0,0.03,0.03,0,0,1,0,0,0,255,0,0,1.10,1.10
+nSec2M,100,0,50,50,0,0,0,0,0
+nSecT,0,0,0,0,0,0,0,90,90
+nSec2d,0,1
+nSec2a,0,0,"Stock Sections\BSF_Stock13.png",1,1,0,-1,1,1,-1,3429230
+nSec2b,0,60,60,0,-180,180,0,0,-1,0
+nSec2c,0,1,0,0.03,0.03,0,0,1,0,0,0,255,0,0,1.10,1.10
+nSec2M,100,0,50,50,0,0,0,0,0
+nSecT,0,0,0,0,0,0,0,90,90
+nSec2d,0,1
+l_sectionnum=j-1
+l_maxsyshp=0
+initSections
+//WEAPONS/MODULES
+//Parents
+nPar2,4,0
+nPar2,4,1
+nPar2,4,2
+nPar2,4,3
+nPar2,0,5
+nPar2,1,6
+nPar2,2,7
+nPar2,3,8
+nPar2,4,9
+//Weapon links, drivers and triggers
+
+//Section triggers
+
+
+//Weapon init
+l_weaponnum=wj-1
+initWeapons
+l_ailevel=1
+initOwners
+//ENDING

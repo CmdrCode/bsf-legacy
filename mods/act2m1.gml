@@ -339,6 +339,76 @@ object_event_add(global.a2m1_ctr, 2, 2,
     'global.a2m1_interf = 1;' +
     'centreCamera(260,1000,0);' +
     'global.lasteventx = 260; global.lasteventy = 1000;' +
+    's = noone;' +
+    'if (file_exists("mods/ships/beacon_ratline.shp")) {' +
+    'with (ctr_Spawner) instance_destroy();' +
+    'global.a2m1_imp = importShip("mods/ships/beacon_ratline.shp",2,724,1448);' +
+    'with (ctr_Spawner) instance_destroy();' +
+    'if (global.a2m1_imp >= 0) {' +
+    's = instance_create(724,1448,global.a2m1_imp);' +
+    '}' +
+    '}' +
+    'if (instance_exists(s)) { s.l_holdposition = true; s.l_myship = 0; s.l_thrust = 0; s.l_maxspeed = 0; s.l_turning = 0; s.direction = 12; s.image_angle = 12; };' +
+    's = noone;' +
+    'if (file_exists("mods/ships/beacon_ratline_hulk.shp")) {' +
+    'with (ctr_Spawner) instance_destroy();' +
+    'global.a2m1_imp = importShip("mods/ships/beacon_ratline_hulk.shp",2,1314,739);' +
+    'with (ctr_Spawner) instance_destroy();' +
+    'if (global.a2m1_imp >= 0) {' +
+    's = instance_create(1314,739,global.a2m1_imp);' +
+    '}' +
+    '}' +
+    'if (instance_exists(s)) { s.l_holdposition = true; s.l_myship = 0; s.l_thrust = 0; s.l_maxspeed = 0; s.l_turning = 0; s.direction = 61; s.image_angle = 61; };' +
+    's = noone;' +
+    'if (file_exists("mods/ships/beacon_ratline.shp")) {' +
+    'with (ctr_Spawner) instance_destroy();' +
+    'global.a2m1_imp = importShip("mods/ships/beacon_ratline.shp",2,1911,1222);' +
+    'with (ctr_Spawner) instance_destroy();' +
+    'if (global.a2m1_imp >= 0) {' +
+    's = instance_create(1911,1222,global.a2m1_imp);' +
+    '}' +
+    '}' +
+    'if (instance_exists(s)) { s.l_holdposition = true; s.l_myship = 0; s.l_thrust = 0; s.l_maxspeed = 0; s.l_turning = 0; s.direction = 34; s.image_angle = 34; };' +
+    's = noone;' +
+    'if (file_exists("mods/ships/beacon_ratline_hulk.shp")) {' +
+    'with (ctr_Spawner) instance_destroy();' +
+    'global.a2m1_imp = importShip("mods/ships/beacon_ratline_hulk.shp",2,2269,741);' +
+    'with (ctr_Spawner) instance_destroy();' +
+    'if (global.a2m1_imp >= 0) {' +
+    's = instance_create(2269,741,global.a2m1_imp);' +
+    '}' +
+    '}' +
+    'if (instance_exists(s)) { s.l_holdposition = true; s.l_myship = 0; s.l_thrust = 0; s.l_maxspeed = 0; s.l_turning = 0; s.direction = 78; s.image_angle = 78; };' +
+    's = noone;' +
+    'if (file_exists("mods/ships/beacon_ratline.shp")) {' +
+    'with (ctr_Spawner) instance_destroy();' +
+    'global.a2m1_imp = importShip("mods/ships/beacon_ratline.shp",2,2520,1120);' +
+    'with (ctr_Spawner) instance_destroy();' +
+    'if (global.a2m1_imp >= 0) {' +
+    's = instance_create(2520,1120,global.a2m1_imp);' +
+    '}' +
+    '}' +
+    'if (instance_exists(s)) { s.l_holdposition = true; s.l_myship = 0; s.l_thrust = 0; s.l_maxspeed = 0; s.l_turning = 0; s.direction = 23; s.image_angle = 23; };' +
+    'global.a2m1_gateN = noone;' +
+    'if (file_exists("mods/ships/station_gatebattery.shp")) {' +
+    'with (ctr_Spawner) instance_destroy();' +
+    'global.a2m1_imp = importShip("mods/ships/station_gatebattery.shp",2,2830,800);' +
+    'with (ctr_Spawner) instance_destroy();' +
+    'if (global.a2m1_imp >= 0) {' +
+    'global.a2m1_gateN = instance_create(2830,800,global.a2m1_imp);' +
+    '}' +
+    '}' +
+    'if (instance_exists(global.a2m1_gateN)) { global.a2m1_gateN.l_holdposition = true; global.a2m1_gateN.l_myship = 0; global.a2m1_gateN.l_thrust = 0; global.a2m1_gateN.l_maxspeed = 0; global.a2m1_gateN.l_turning = 0; global.a2m1_gateN.direction = 205; global.a2m1_gateN.image_angle = 205; };' +
+    'global.a2m1_gateS = noone;' +
+    'if (file_exists("mods/ships/station_gatebattery.shp")) {' +
+    'with (ctr_Spawner) instance_destroy();' +
+    'global.a2m1_imp = importShip("mods/ships/station_gatebattery.shp",2,2830,1290);' +
+    'with (ctr_Spawner) instance_destroy();' +
+    'if (global.a2m1_imp >= 0) {' +
+    'global.a2m1_gateS = instance_create(2830,1290,global.a2m1_imp);' +
+    '}' +
+    '}' +
+    'if (instance_exists(global.a2m1_gateS)) { global.a2m1_gateS.l_holdposition = true; global.a2m1_gateS.l_myship = 0; global.a2m1_gateS.l_thrust = 0; global.a2m1_gateS.l_maxspeed = 0; global.a2m1_gateS.l_turning = 0; global.a2m1_gateS.direction = 155; global.a2m1_gateS.image_angle = 155; };' +
     'showMessage(0,$00FF00,"[Hint]",global.a2m1_t21,spr_MesHint);');
 object_event_clear(global.a2m1_ctr, 2, 5);
 object_event_add(global.a2m1_ctr, 2, 5,
@@ -454,23 +524,23 @@ object_event_add(global.a2m1_ctr, 7, 10,
     'stopMusic(); bgm_Play(global.mus_theme,1);' +
     'sound_stop(snd_eeriesound);' +
     'global.a2m1_interf = 0;' +
-    'centreCamera(3437,917,90);' +
-    'global.lasteventx = 3437; global.lasteventy = 917;' +
+    'centreCamera(3697,917,90);' +
+    'global.lasteventx = 3697; global.lasteventy = 917;' +
     'global.a2m1_station = noone;' +
     'if (file_exists("mods/ships/station_bolthole.shp")) {' +
     'with (ctr_Spawner) instance_destroy();' +
-    'global.a2m1_imp = importShip("mods/ships/station_bolthole.shp",2,3409,1102);' +
+    'global.a2m1_imp = importShip("mods/ships/station_bolthole.shp",2,3669,1102);' +
     'with (ctr_Spawner) instance_destroy();' +
     'if (global.a2m1_imp >= 0) {' +
-    'global.a2m1_station = instance_create(3409,1102,global.a2m1_imp);' +
+    'global.a2m1_station = instance_create(3669,1102,global.a2m1_imp);' +
     '}' +
     '}' +
     'if (instance_exists(global.a2m1_station)) { global.a2m1_station.l_holdposition = true; global.a2m1_station.l_myship = 0; global.a2m1_station.l_thrust = 0; global.a2m1_station.l_maxspeed = 0; global.a2m1_station.l_turning = 0; global.a2m1_station.direction = 90; global.a2m1_station.image_angle = 90; };' +
-    'instance_create(3095,461,ter_Planet);' +
-    'global.a2m1_berth1 = instance_create(2930,707,Hecate); global.a2m1_berth1.l_holdposition = true; global.a2m1_berth1.l_myship = 0; global.a2m1_berth1.l_thrust = 0; global.a2m1_berth1.l_maxspeed = 0; global.a2m1_berth1.l_turning = 0; global.a2m1_berth1.direction = 270; global.a2m1_berth1.image_angle = 270; with (ShipSection) { if (l_owner = global.a2m1_berth1) l_hp = l_hp * 0.28; }; global.a2m1_dmg[0] = global.a2m1_berth1;' +
-    'global.a2m1_berth2 = instance_create(3129,775,Cronus); global.a2m1_berth2.l_holdposition = true; global.a2m1_berth2.l_myship = 0; global.a2m1_berth2.l_thrust = 0; global.a2m1_berth2.l_maxspeed = 0; global.a2m1_berth2.l_turning = 0; global.a2m1_berth2.direction = 270; global.a2m1_berth2.image_angle = 270; with (ShipSection) { if (l_owner = global.a2m1_berth2) l_hp = l_hp * 0.34; }; global.a2m1_dmg[1] = global.a2m1_berth2;' +
-    'global.a2m1_berth3 = instance_create(3700,707,Athena); global.a2m1_berth3.l_holdposition = true; global.a2m1_berth3.l_myship = 0; global.a2m1_berth3.l_thrust = 0; global.a2m1_berth3.l_maxspeed = 0; global.a2m1_berth3.l_turning = 0; global.a2m1_berth3.direction = 270; global.a2m1_berth3.image_angle = 270; with (ShipSection) { if (l_owner = global.a2m1_berth3) l_hp = l_hp * 0.22; }; global.a2m1_dmg[2] = global.a2m1_berth3;' +
-    'global.a2m1_berth4 = instance_create(3877,800,Hestia); global.a2m1_berth4.l_holdposition = true; global.a2m1_berth4.l_myship = 0; global.a2m1_berth4.l_thrust = 0; global.a2m1_berth4.l_maxspeed = 0; global.a2m1_berth4.l_turning = 0; global.a2m1_berth4.direction = 270; global.a2m1_berth4.image_angle = 270; with (ShipSection) { if (l_owner = global.a2m1_berth4) l_hp = l_hp * 0.4; }; global.a2m1_dmg[3] = global.a2m1_berth4;' +
+    'instance_create(3355,461,ter_Planet);' +
+    'global.a2m1_berth1 = instance_create(3190,707,Hecate); global.a2m1_berth1.l_holdposition = true; global.a2m1_berth1.l_myship = 0; global.a2m1_berth1.l_thrust = 0; global.a2m1_berth1.l_maxspeed = 0; global.a2m1_berth1.l_turning = 0; global.a2m1_berth1.direction = 270; global.a2m1_berth1.image_angle = 270; with (ShipSection) { if (l_owner = global.a2m1_berth1) l_hp = l_hp * 0.28; }; global.a2m1_dmg[0] = global.a2m1_berth1;' +
+    'global.a2m1_berth2 = instance_create(3389,775,Cronus); global.a2m1_berth2.l_holdposition = true; global.a2m1_berth2.l_myship = 0; global.a2m1_berth2.l_thrust = 0; global.a2m1_berth2.l_maxspeed = 0; global.a2m1_berth2.l_turning = 0; global.a2m1_berth2.direction = 270; global.a2m1_berth2.image_angle = 270; with (ShipSection) { if (l_owner = global.a2m1_berth2) l_hp = l_hp * 0.34; }; global.a2m1_dmg[1] = global.a2m1_berth2;' +
+    'global.a2m1_berth3 = instance_create(3960,707,Athena); global.a2m1_berth3.l_holdposition = true; global.a2m1_berth3.l_myship = 0; global.a2m1_berth3.l_thrust = 0; global.a2m1_berth3.l_maxspeed = 0; global.a2m1_berth3.l_turning = 0; global.a2m1_berth3.direction = 270; global.a2m1_berth3.image_angle = 270; with (ShipSection) { if (l_owner = global.a2m1_berth3) l_hp = l_hp * 0.22; }; global.a2m1_dmg[2] = global.a2m1_berth3;' +
+    'global.a2m1_berth4 = instance_create(4137,800,Hestia); global.a2m1_berth4.l_holdposition = true; global.a2m1_berth4.l_myship = 0; global.a2m1_berth4.l_thrust = 0; global.a2m1_berth4.l_maxspeed = 0; global.a2m1_berth4.l_turning = 0; global.a2m1_berth4.direction = 270; global.a2m1_berth4.image_angle = 270; with (ShipSection) { if (l_owner = global.a2m1_berth4) l_hp = l_hp * 0.4; }; global.a2m1_dmg[3] = global.a2m1_berth4;' +
     'showMessage(0,$00FF00,"Fleet HQ",global.a2m1_t10,spr_MesHQ);' +
     '}' +
     'else if (l_messagecount = 17) {' +
@@ -487,13 +557,13 @@ object_event_add(global.a2m1_ctr, 7, 10,
     'global.ed_beat = 19;' +
     'global.ed_beatseq += 1;' +
     'showMessage(0,$00FF00,"Fleet Admiral Hong",global.a2m1_t13,spr_MesHong);' +
-    'g = instance_create(3387,825,MoveToArea); g.l_target = global.a2m1_ship; showPing(3387,825);' +
+    'g = instance_create(3647,825,MoveToArea); g.l_target = global.a2m1_ship; showPing(3647,825);' +
     '}' +
     'else if (l_messagecount = 21) {' +
     'global.ed_beat = 21;' +
     'global.ed_beatseq += 1;' +
-    'global.a2m1_hestiax = instance_create(3384,701,Hestia);' +
-    'showPing(3384,701);' +
+    'global.a2m1_hestiax = instance_create(3644,701,Hestia);' +
+    'showPing(3644,701);' +
     'showMessage(0,$00FF00,"Fleet Admiral Hong",global.a2m1_t14,spr_MesHong);' +
     '}' +
     'else if (l_messagecount = 22) {' +
@@ -544,26 +614,26 @@ object_event_add(global.a2m1_ctr, 7, 11,
     'stopMusic(); bgm_Play(global.mus_theme,1);' +
     'sound_stop(snd_eeriesound);' +
     'global.a2m1_interf = 0;' +
-    'centreCamera(3437,917,90);' +
-    'global.lasteventx = 3437; global.lasteventy = 917;' +
+    'centreCamera(3697,917,90);' +
+    'global.lasteventx = 3697; global.lasteventy = 917;' +
     'global.a2m1_station = noone;' +
     'if (file_exists("mods/ships/station_bolthole.shp")) {' +
     'with (ctr_Spawner) instance_destroy();' +
-    'global.a2m1_imp = importShip("mods/ships/station_bolthole.shp",2,3409,1102);' +
+    'global.a2m1_imp = importShip("mods/ships/station_bolthole.shp",2,3669,1102);' +
     'with (ctr_Spawner) instance_destroy();' +
     'if (global.a2m1_imp >= 0) {' +
-    'global.a2m1_station = instance_create(3409,1102,global.a2m1_imp);' +
+    'global.a2m1_station = instance_create(3669,1102,global.a2m1_imp);' +
     '}' +
     '}' +
     'if (instance_exists(global.a2m1_station)) { global.a2m1_station.l_holdposition = true; global.a2m1_station.l_myship = 0; global.a2m1_station.l_thrust = 0; global.a2m1_station.l_maxspeed = 0; global.a2m1_station.l_turning = 0; global.a2m1_station.direction = 90; global.a2m1_station.image_angle = 90; };' +
-    'instance_create(3095,461,ter_Planet);' +
-    'global.a2m1_berth1 = instance_create(2930,707,Hecate); global.a2m1_berth1.l_holdposition = true; global.a2m1_berth1.l_myship = 0; global.a2m1_berth1.l_thrust = 0; global.a2m1_berth1.l_maxspeed = 0; global.a2m1_berth1.l_turning = 0; global.a2m1_berth1.direction = 270; global.a2m1_berth1.image_angle = 270; with (ShipSection) { if (l_owner = global.a2m1_berth1) l_hp = l_hp * 0.28; }; global.a2m1_dmg[0] = global.a2m1_berth1;' +
-    'global.a2m1_berth2 = instance_create(3129,775,Cronus); global.a2m1_berth2.l_holdposition = true; global.a2m1_berth2.l_myship = 0; global.a2m1_berth2.l_thrust = 0; global.a2m1_berth2.l_maxspeed = 0; global.a2m1_berth2.l_turning = 0; global.a2m1_berth2.direction = 270; global.a2m1_berth2.image_angle = 270; with (ShipSection) { if (l_owner = global.a2m1_berth2) l_hp = l_hp * 0.34; }; global.a2m1_dmg[1] = global.a2m1_berth2;' +
-    'global.a2m1_berth3 = instance_create(3700,707,Athena); global.a2m1_berth3.l_holdposition = true; global.a2m1_berth3.l_myship = 0; global.a2m1_berth3.l_thrust = 0; global.a2m1_berth3.l_maxspeed = 0; global.a2m1_berth3.l_turning = 0; global.a2m1_berth3.direction = 270; global.a2m1_berth3.image_angle = 270; with (ShipSection) { if (l_owner = global.a2m1_berth3) l_hp = l_hp * 0.22; }; global.a2m1_dmg[2] = global.a2m1_berth3;' +
-    'global.a2m1_berth4 = instance_create(3877,800,Hestia); global.a2m1_berth4.l_holdposition = true; global.a2m1_berth4.l_myship = 0; global.a2m1_berth4.l_thrust = 0; global.a2m1_berth4.l_maxspeed = 0; global.a2m1_berth4.l_turning = 0; global.a2m1_berth4.direction = 270; global.a2m1_berth4.image_angle = 270; with (ShipSection) { if (l_owner = global.a2m1_berth4) l_hp = l_hp * 0.4; }; global.a2m1_dmg[3] = global.a2m1_berth4;' +
+    'instance_create(3355,461,ter_Planet);' +
+    'global.a2m1_berth1 = instance_create(3190,707,Hecate); global.a2m1_berth1.l_holdposition = true; global.a2m1_berth1.l_myship = 0; global.a2m1_berth1.l_thrust = 0; global.a2m1_berth1.l_maxspeed = 0; global.a2m1_berth1.l_turning = 0; global.a2m1_berth1.direction = 270; global.a2m1_berth1.image_angle = 270; with (ShipSection) { if (l_owner = global.a2m1_berth1) l_hp = l_hp * 0.28; }; global.a2m1_dmg[0] = global.a2m1_berth1;' +
+    'global.a2m1_berth2 = instance_create(3389,775,Cronus); global.a2m1_berth2.l_holdposition = true; global.a2m1_berth2.l_myship = 0; global.a2m1_berth2.l_thrust = 0; global.a2m1_berth2.l_maxspeed = 0; global.a2m1_berth2.l_turning = 0; global.a2m1_berth2.direction = 270; global.a2m1_berth2.image_angle = 270; with (ShipSection) { if (l_owner = global.a2m1_berth2) l_hp = l_hp * 0.34; }; global.a2m1_dmg[1] = global.a2m1_berth2;' +
+    'global.a2m1_berth3 = instance_create(3960,707,Athena); global.a2m1_berth3.l_holdposition = true; global.a2m1_berth3.l_myship = 0; global.a2m1_berth3.l_thrust = 0; global.a2m1_berth3.l_maxspeed = 0; global.a2m1_berth3.l_turning = 0; global.a2m1_berth3.direction = 270; global.a2m1_berth3.image_angle = 270; with (ShipSection) { if (l_owner = global.a2m1_berth3) l_hp = l_hp * 0.22; }; global.a2m1_dmg[2] = global.a2m1_berth3;' +
+    'global.a2m1_berth4 = instance_create(4137,800,Hestia); global.a2m1_berth4.l_holdposition = true; global.a2m1_berth4.l_myship = 0; global.a2m1_berth4.l_thrust = 0; global.a2m1_berth4.l_maxspeed = 0; global.a2m1_berth4.l_turning = 0; global.a2m1_berth4.direction = 270; global.a2m1_berth4.image_angle = 270; with (ShipSection) { if (l_owner = global.a2m1_berth4) l_hp = l_hp * 0.4; }; global.a2m1_dmg[3] = global.a2m1_berth4;' +
     '} }' +
     'if (l_seek >= 21) { if (l_seek_from < 21) {' +
-    'global.a2m1_hestiax = instance_create(3384,701,Hestia);' +
+    'global.a2m1_hestiax = instance_create(3644,701,Hestia);' +
     '} }' +
     'l_seek_from = l_seek;' +
     'global.ed_beat = l_seek;' +

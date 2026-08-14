@@ -182,8 +182,94 @@ def next_depth(ship: model.Ship) -> float:
 
 
 # --------------------------------------------------------------------------
+# colour
+# --------------------------------------------------------------------------
+
+#: `nSecB` is where a section records *where its colour comes from*.
+#: `l_colourmod` indexes the team's three-shade palette, and `-1` means custom
+#: -- in which case `l_colour` beside it is the literal GM colour to draw.
+SECB_COLOURMOD, SECB_COLOUR = 12, 13
+
+#: `nCor`'s `l_colourtype` picks the palette, in the game's own index order.
+COLOUR_TYPES = ('player', 'allied', 'pirate', 'alien', 'razor')
+
+
+def _tier2(ship: model.Ship, kind: str, sid: int) -> model.Record | None:
+    for r in ship.of_kind(kind):
+        if _int(r, 0) == sid:
+            return r
+    return None
+
+
+def set_colour(ship: model.Ship, sid: int, colour: int | None,
+               shade: int = 0) -> str:
+    """Fix a section's colour, or hand it back to the team palette.
+
+    D7 says never to hand-edit `nSecB`, and this is the documented exception
+    rather than a hole in it: the two fields written here are the ones every
+    layer of the toolchain has been read on. ShipMaker offers them in its own
+    section menu ("1. Default colour | 2. Custom Color") and its `nSecB` reader
+    branches on exactly this value; `export.py` carries the pair across as
+    `nSec2a`'s optional eleventh field; and the game's own `nSec2a` closes with
+    `if argument10 = 0 then l_colour = global.colour[...] else l_colour =
+    argument10`. Nothing here is inferred. The rest of `nSecB` is still
+    untouchable for the reason D7 gives.
+
+    **Both halves or neither.** `image_blend` on `nSecA` is what ShipMaker and
+    this renderer draw; `l_colourmod`/`l_colour` on `nSecB` is what reaches the
+    game. Writing only the first -- the obvious edit, and the one `stockship`
+    made for its wreck tint -- produces a design that is the right colour in
+    every picture and the team's colour in the only place that counts.
+    """
+    sec = ship.section(sid)
+    if sec is None:
+        raise EditError(f'no section {sid}')
+    b = _tier2(ship, 'nSecB', sid)
+    if b is None:
+        raise EditError(
+            f'section {sid} has no nSecB record, so a colour has nowhere to '
+            f'live in the .shp -- it was added with no donor to clone from')
+    if colour is None:
+        if not 0 <= shade <= 2:
+            raise EditError(f'team shade {shade} is out of range 0..2')
+        colour = team_colour(ship, shade)
+        b.set_num(SECB_COLOURMOD, shade)
+        b.set_num(SECB_COLOUR, colour)
+        how = f'team shade {shade}'
+    else:
+        b.set_num(SECB_COLOURMOD, -1)
+        b.set_num(SECB_COLOUR, colour)
+        how = 'custom'
+    sec.rec.set_num(model.Section.IMAGE_BLEND, colour)
+    r, g, bl = sprites.gm_colour(colour)
+    return f'section {sid}: {how} #{r:02X}{g:02X}{bl:02X}'
+
+
+def team_colour(ship: model.Ship, shade: int) -> int:
+    """The GM colour this ship's own palette resolves a shade index to.
+
+    The palette is the *team's*, not the ship's -- a hull spawns into one and is
+    tinted by it -- so this is only what ShipMaker would show while editing,
+    which is exactly what `image_blend` is for.
+    """
+    kind = 0
+    core = ship.core
+    if core is not None:
+        kind = int(core.num(1))
+    name = COLOUR_TYPES[kind] if 0 <= kind < len(COLOUR_TYPES) else 'player'
+    shades = sprites.teams().get(name) or sprites.teams()['player']
+    r, g, b = shades[min(shade, len(shades) - 1)]
+    return r + g * 256 + b * 65536
+
+
+# --------------------------------------------------------------------------
 # donors
 # --------------------------------------------------------------------------
+
+#: A real ship, to clone a section's tier-2 block from when the hull being
+#: built has no section of its own yet.
+SECTION_DONOR = paths.PENDULUM
+
 
 def pick_donor(ship: model.Ship, sprite: str, explicit: int | None,
                parent: int) -> tuple[model.Section | None, str]:
@@ -191,7 +277,16 @@ def pick_donor(ship: model.Ship, sprite: str, explicit: int | None,
 
     Preference order is by how likely the copy is to be faithful: the same
     sprite first (identical art almost always means identical rotator and
-    effect setup), then the parent it is being attached to, then anything.
+    effect setup), then the parent it is being attached to, then anything on
+    this hull -- and only then a section off a real ship on disk.
+
+    That last fallback is what makes an **empty** hull buildable. Without it the
+    first section of a new design got no `nSecB/C/D/Tr` at all, and since every
+    later section clones the first, a whole ship came out with no tier-2 records
+    anywhere: no rotator state, and -- because `l_colourmod` lives in `nSecB` --
+    nowhere for a fixed colour to live either. Cloning from disk is the same
+    answer `weapon_template` already gives for the same problem (D16); inventing
+    a default block is the one thing D7 rules out.
     """
     if explicit is not None:
         d = ship.section(explicit)
@@ -207,10 +302,37 @@ def pick_donor(ship: model.Ship, sprite: str, explicit: int | None,
     if ship.sections:
         s = ship.sections[0]
         return s, f'section {s.id}, the only candidate'
+    if SECTION_DONOR.exists():
+        d = model.load(SECTION_DONOR)
+        s = _plainest(d)
+        if s is not None:
+            return s, (f'{SECTION_DONOR.name} section {s.id} -- this hull has '
+                       f'none of its own yet')
     return None, 'none -- corpus defaults used'
 
 
-def write_section_block(ship: model.Ship, seca: list[str], donor_id: int | None,
+def _plainest(ship: model.Ship) -> model.Section | None:
+    """The most inert section on a ship: no effect, no rotation, no movement.
+
+    Only ever used for the off-ship fallback, and there it matters. Taking
+    `sections[0]` took Pendulum's, which carries `effect = 5` -- the Aegis blur,
+    which redraws its sprite dozens of times a frame under additive blending.
+    Ten sections of it came back on the first hull built from nothing, on a
+    design whose whole point was to look switched off. A caller who has asked
+    for nothing has asked for a plain plate.
+    """
+    def loud(s: model.Section) -> int:
+        n = 0
+        for kind, field in (('nSecC', 1), ('nSecB', 1), ('nSecD', 5)):
+            r = _tier2(ship, kind, s.id)
+            n += bool(r is not None and _int(r, field, 0))
+        return n
+
+    return min(ship.sections, key=loud, default=None)
+
+
+def write_section_block(ship: model.Ship, seca: list[str],
+                        donor: model.Section | None,
                         mirrored: bool = False) -> list[model.Record]:
     """Append a whole section -- `nSecA` then its tier-2 records -- in one block.
 
@@ -223,17 +345,22 @@ def write_section_block(ship: model.Ship, seca: list[str], donor_id: int | None,
     id, and -- when the new section is a mirror image -- the handed rotator,
     effect and trigger settings. Everything else is carried across verbatim,
     which is the point of cloning rather than templating.
+
+    The donor is a `Section`, not an id, because it may belong to a *different*
+    ship: an empty hull has nothing of its own to clone and falls back to one on
+    disk. Reading the records off `donor.ship` rather than off `ship` is the
+    whole of what that costs.
     """
     new_id = int(float(seca[0]))
     after = _last_record(ship, ('nSecA',) + SECTION_TIER2)
     after = ship.add_record('nSecA', seca, after)
     made = [after]
-    if donor_id is None:
+    if donor is None:
         return made
     for kind in SECTION_TIER2:
         src = None
-        for r in ship.of_kind(kind):
-            if _int(r, 0) == donor_id:
+        for r in donor.ship.of_kind(kind):
+            if _int(r, 0) == donor.id:
                 src = r
                 break
         if src is None:
@@ -322,7 +449,7 @@ def add_section(ship: model.Ship, sprite: str, x: float, y: float, *,
         notes.append(f'l_defhp {toks[S.DEFHP]} inherited from a section with a '
                      f'different sprite — set it in ShipMaker if it matters')
 
-    write_section_block(ship, toks, d.id if d is not None else None)
+    write_section_block(ship, toks, d)
     if d is None:
         notes.append('no donor: this section has no nSecB/C/D/Tr records, so '
                      'ShipMaker will load it with its own defaults')
@@ -337,6 +464,19 @@ def add_section(ship: model.Ship, sprite: str, x: float, y: float, *,
 WEAPON_DONOR = paths.PENDULUM
 
 
+#: `nWepB` fields that `export` feeds to `nWep2a`, every one of which that
+#: handler tests against `-1` before assigning. **(GML)** In order: firingrate,
+#: firingclip, firingreload, damage, hp, range, deviation, turning, bulletcol,
+#: bulletspeed. `nWepC[1..5]` are the five specials and behave the same way.
+WEPB_STATS = (4, 5, 6, 7, 8, 9, 10, 11, 12, 13)
+WEPC_STATS = (1, 2, 3, 4, 5)
+
+#: `l_arcrange`. `nTur2` assigns it unconditionally -- it is the one turret
+#: field with **no** `-1` sentinel -- so a new mount has to state a real value
+#: and there is no "whatever the object thinks". 180 means the full circle.
+DEFAULT_ARC = 180.0
+
+
 def weapon_template(ship: model.Ship) -> dict[str, list[str]]:
     """Token lists for one real weapon's records.
 
@@ -345,6 +485,11 @@ def weapon_template(ship: model.Ship) -> dict[str, list[str]]:
     an existing one rather than inventing values, exactly as a new section
     clones its tier-2 records from a donor section (D16). A weapon already on
     the ship is the best donor; failing that, one off a real ship on disk.
+
+    **The least customised weapon, not the first.** Pendulum's weapon 0 is its
+    PlasmaBall, which carries a hand-tuned firing rate, clip, reload, damage,
+    range and five specials -- and taking `ids[0]` handed every one of those to
+    whatever you mounted next.
     """
     for src in (ship, None):
         s = src
@@ -355,15 +500,54 @@ def weapon_template(ship: model.Ship) -> dict[str, list[str]]:
         ids = [int(r.num(0)) for r in s.of_kind('nWepA')]
         if not ids:
             continue
-        wid = ids[0]
-        out: dict[str, list[str]] = {}
-        for r in s.records:
-            if (r.kind.startswith('nWep') and r.kind != 'nWepMir'
-                    and _int(r, 0) == wid):
-                out.setdefault(r.kind, list(r.tokens))
+        by_id = {k: {r.kind: r for r in s.records
+                     if r.kind.startswith('nWep') and r.kind != 'nWepMir'
+                     and _int(r, 0) == k} for k in ids}
+
+        def tuned(k: int) -> int:
+            recs = by_id[k]
+            n = sum(_int(recs['nWepB'], i, -1) != -1 for i in WEPB_STATS
+                    if 'nWepB' in recs)
+            n += sum(_int(recs['nWepC'], i, -1) != -1 for i in WEPC_STATS
+                     if 'nWepC' in recs)
+            return n
+
+        wid = min(ids, key=tuned)
+        out = {k: list(r.tokens) for k, r in by_id[wid].items()}
         if 'nWepA' in out:
             return out
     return {}
+
+
+def _stock_stats(tpl: dict[str, list[str]], arc: float | None) -> None:
+    """Blank the donor's *stats* out of a cloned weapon template, in place.
+
+    Cloning is right for the fields nobody has decoded and wrong for the ones
+    that are the weapon's identity. A Railgun mounted by copying Pendulum's
+    PlasmaBall came out firing at the PlasmaBall's rate, for its damage, to its
+    range -- correct in every render, because a render only draws the sprite.
+
+    `-1` is the loader's own answer: `nWep2a` tests each stat against it and
+    only then assigns, so a mount written in `-1`s shoots exactly like the
+    object it names. `arcrange` is the exception and gets a real value, because
+    `nTur2` has no sentinel for it.
+    """
+    b = tpl.get('nWepB')
+    if b is not None:
+        for i in WEPB_STATS:
+            if i < len(b):
+                b[i] = '-1'
+        while len(b) <= 2:
+            b.append('0')
+        b[2] = model.gmstr(DEFAULT_ARC if arc is None else arc)
+    c = tpl.get('nWepC')
+    if c is not None:
+        for i in WEPC_STATS:
+            if i < len(c):
+                c[i] = '-1'
+    d = tpl.get('nWepD')
+    if d is not None and len(d) > 3:
+        d[3] = ''                       # l_name: "" also means keep
 
 
 def add_weapon(ship: model.Ship, obj: str, x: float, y: float, *,
@@ -396,6 +580,7 @@ def add_weapon(ship: model.Ship, obj: str, x: float, y: float, *,
     tpl = weapon_template(ship)
     if 'nWepA' not in tpl:
         raise EditError('no weapon to clone the unmodelled nWep fields from')
+    _stock_stats(tpl, arc)
 
     notes: list[str] = []
     wid = next_mount_id(ship, 'weapon')
@@ -420,7 +605,8 @@ def add_weapon(ship: model.Ship, obj: str, x: float, y: float, *,
             t[0] = str(wid)
             after = ship.add_record(kind, t, after)
     notes.append(f'{obj} {wid} at {x:+g},{y:+g} on '
-                 f'{"the core" if not parent else f"section {parent}"}')
+                 f'{"the core" if not parent else f"section {parent}"}, '
+                 f'stock stats, arc {DEFAULT_ARC if arc is None else arc:g}')
 
     if mirror and abs(y) >= 1:
         twin = next_mount_id(ship, 'weapon')
@@ -461,10 +647,14 @@ def add_module(ship: model.Ship, obj: str, x: float, y: float, *,
     you a module -- it costs you every weapon on the ship.
 
     Unlike a weapon, this does not clone a donor. `nModA`/`nModB` are understood
-    field by field (they are in the reference table), and the values that matter
-    are the object's own -- so they come from `sprites.MODULE_DEFAULTS`, which
-    was read out of a running game. A module with no measured entry is refused
-    rather than written with zeros.
+    field by field (they are in the reference table), so the records are written
+    outright -- from `sprites.MODULE_DEFAULTS` where the object has been measured
+    in a running game, and otherwise from the `-1` sentinel, which `nMod2` reads
+    as *keep whatever the object's Create event set*. Stock stats either way.
+
+    Writing a **zero** is the thing to never do: `0 != -1`, so it overrides, and
+    a NanoMatrix with range 0 repairs nothing while looking exactly like one
+    that works.
     """
     if obj not in sprites.MODULES:
         raise EditError(f'{obj} is not a module -- use add_weapon')
@@ -473,15 +663,14 @@ def add_module(ship: model.Ship, obj: str, x: float, y: float, *,
         raise EditError(f'no sprite resolves to module {obj!r}')
     if parent and ship.section(parent) is None:
         raise EditError(f'no section {parent} to mount on')
-    d = sprites.MODULE_DEFAULTS.get(obj)
-    if d is None:
-        raise EditError(
-            f'no measured defaults for module {obj!r}. Read them off a running '
-            f'game (see the bsf-ships skill, "Loading a design in the actual '
-            f'game") and add them to sprites.MODULE_DEFAULTS -- guessing them '
-            f'mounts a module that is quietly wrong instead of one that fails.')
+    K = sprites.MODULE_KEEP
+    d = sprites.MODULE_DEFAULTS.get(obj) or dict(
+        hp=K, range=K, eng=K, engregen=K, cost=K, special=(K,) * 8)
 
     notes: list[str] = []
+    if obj not in sprites.MODULE_DEFAULTS:
+        notes.append(f'{obj} has no measured entry, so every stat is written as '
+                     f'-1 and the game uses the object\'s own')
     mid = next_mount_id(ship, 'module')
     after = _last_record(ship, ('nModC', 'nModB', 'nModA',
                                 'nWepTr', 'nWepD', 'nWepC', 'nWepB', 'nWepA'))
@@ -631,16 +820,40 @@ def _subtree(ship: model.Ship, sid: int) -> list[int]:
     return out
 
 
+def open_depth_behind(ship: model.Ship, depth: float) -> float:
+    """Free up the layer immediately behind `depth`, and return it.
+
+    Measured across the ships on disk: 69 of 73 mirror pairs sit at **adjacent**
+    depths, and the four that do not carry hand-set values. That is the
+    convention because a reflection is the same part on the other side of the
+    hull -- it belongs in its partner's layer, not at the back of the stack,
+    which is where `next_depth()` used to put it. On the Ratline beacon that
+    left one of four otherwise identical spar caps drawn *behind* the spar the
+    other three sat in front of, on a hull that was symmetric in every other
+    respect.
+
+    Everything at or beyond the new layer shifts back one to keep depths
+    unique, which they must be: `export` warns and ShipMaker drops sections that
+    collide.
+    """
+    want = depth + 1
+    for s in ship.sections:
+        if s.depth >= want:
+            s.depth = s.depth + 1
+    return want
+
+
 def _reflect_section(ship: model.Ship, src: model.Section) -> int:
     sid = next_secid(ship)
     S = model.Section
+    depth = open_depth_behind(ship, src.depth)
     toks = list(src.rec.tokens)
     toks[0] = str(sid)
     toks[S.Y] = model.gmstr(ship.core_y - src.y)
     toks[S.YS] = model.gmstr(-src.yscale)
     toks[S.ANGLE] = model.gmstr(-src.angle)
-    toks[S.DEPTH] = model.gmstr(next_depth(ship))
-    write_section_block(ship, toks, src.id, mirrored=True)
+    toks[S.DEPTH] = model.gmstr(depth)
+    write_section_block(ship, toks, src, mirrored=True)
     _pair(ship, 'section', src.id, sid)
     return sid
 

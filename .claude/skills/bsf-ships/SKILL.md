@@ -36,6 +36,17 @@ follows `bsf-capture`'s posture rather than `bsf-storytelling`'s.
    render. The CLI handles this; anything hand-editing `nSecA` must too.
 7. **Tier-2 fields are preserved, not understood.** Never hand-edit an `nSecB`,
    `nSecC`, `nSecD` or a trigger record. New sections *clone a donor* instead.
+   The one documented exception is the colour pair `nSecB[12]/[13]`, which
+   `ship colour` writes — every layer that reads it has been read, from
+   ShipMaker's own menu to the game's `nSec2a`. See REFERENCE.
+7a. **Check what the donor was carrying.** Cloning copies effects and stats
+   too, and Pendulum — the ship on disk everything falls back to — is a bad
+   first pick twice over: its section 1 has `effect = 5`, the Aegis blur that
+   redraws its sprite dozens of times a frame additively, and its weapon 0 is a
+   hand-tuned PlasmaBall. Building a hull from nothing once handed all ten
+   sections that effect, on a design whose whole point was to look switched
+   off. Both fallbacks now pick the *plainest* candidate rather than the first;
+   on a hull with parts of its own, `--donor` is yours to aim.
 8. **GM writes reals at exactly two decimals.** Re-serialising an untouched
    value is a spurious diff and looks like corruption in `ship diff`. The model
    keeps original text for untouched fields; keep it that way.
@@ -95,6 +106,26 @@ follows `bsf-capture`'s posture rather than `bsf-storytelling`'s.
     `with (ctr_ITurrets) if (rs_owner < 100000) …`, since instance ids start at
     100000 and `noone` is -4.
 
+19e. **`-1` is the loader's "keep the object's own value", and it is the
+    default a new mount wants.** `nWep2a` tests every stat against it before
+    assigning — firing rate, clip, reload, damage, hp, range, deviation,
+    turning, bullet colour and speed — and `nMod2` does the same for a module's
+    cost, energy, regen, hp, range and all eight specials. **(GML)** So a mount
+    written entirely in `-1`s fights exactly like the object it names.
+
+    Both halves of that mattered. Cloning a donor's `nWepB` wholesale gave a
+    new Railgun *Pendulum's PlasmaBall stats* — a bug no render can show, since
+    a render only draws the sprite. And reading "nMod2 overrides the object's
+    defaults" as "every module must be measured before it can be mounted" had
+    locked out `Deflector` and `AegisDeflector`, the game's only two shield
+    modules. The real rule is narrower: **never write a zero you did not mean.**
+    A zero *does* override, which is how you get a NanoMatrix with range 0 that
+    repairs nothing and looks exactly like one that works.
+
+    `arcrange` is the exception with no sentinel — `nTur2` assigns it flat — so
+    a new mount states one. `ship arm` uses 180, the full circle; `--arc`
+    narrows it.
+
 19c. **A module is not a weapon, and filing one as a weapon costs the whole
     ship.** The loader's `nWep2a` handler reads `l_weapon[wj].l_bullet`; a
     module has no such variable, the read throws, and because this runs inside
@@ -140,9 +171,14 @@ follows `bsf-capture`'s posture rather than `bsf-storytelling`'s.
 20. **The `.sb4` is source; the game loads the `.shp`.** Sections there are
     `nSec2a` records this model does not build, so *no* `.sb4` edit reaches the
     game without a ShipMaker re-export. Say so whenever handing work over.
-21. **Ship assets are gitignored.** `*.sb4` is in `.gitignore` and
-    `mods/ships/` is untracked, so the shadow repo in the cache is the only
-    version control they have. Never report ship work as "committed".
+21. **`mods/ships/` is the exception to the gitignore, and both halves are
+    tracked.** `*.sb4` and `*.shp` are ignored everywhere else, then
+    re-included by name for this one directory — the `.sb4` because it is the
+    editable source, the `.shp` because it is what the game loads, and a
+    `.shp` that has fallen behind its `.sb4` is a real bug you want to see in
+    a diff. So **export before you commit**, and a campaign hull *is* ordinary
+    tracked work. Everything outside that directory still has only the shadow
+    repo in the cache for version control.
 
 ## Workflow
 
@@ -154,7 +190,8 @@ follows `bsf-capture`'s posture rather than `bsf-storytelling`'s.
    `ship select '<query>' <file> --shot sel.png`, and only then edit. Ids move;
    descriptions do not. Grammar in [REFERENCE.md](REFERENCE.md).
 3. **Edit.** `move` / `rotate` / `flip` for geometry, `add` / `mirror` /
-   `remove` / `reparent` for structure, `arm` for weapons. Edits follow the
+   `remove` / `reparent` for structure, `arm` for weapons, `colour` for a
+   fixed tint. Edits follow the
    `nSecMir` partner by default; `--no-mirror` opts out. Subtrees need
    `--with-children`; mounts always come along. A section id is bare (`5`), a
    mount is kind-prefixed (`weapon:0`) — and a mount edit moves that mount
@@ -172,6 +209,29 @@ When the work is for someone watching, `ship serve --bind <an address they can
 reach>` and
 give them the URL: it repaints on every write, so they can redirect you mid-build
 instead of after it.
+
+### Starting a hull from nothing
+
+There is no `ship new`. Write the six-line header yourself — `//sb4 ver2`, the
+banners, one `nShp` and one `nCor` — and then `ship add` onto it; the first
+section clones its tier-2 block from a ship on disk (see rule 7a). Keep the
+whole build in a re-runnable shell script rather than typing the commands once:
+the `.sb4` is the tracked artefact, but the script is what lets you change your
+mind about a colour or a spar and get the same hull back.
+
+`nShp` is `accel, turn, speed, maxhp, ai_range, ai_mode, name, desc` and `nCor`
+is `image_index, colourtype, colour, xscale, yscale, fadecol, x, y, formrank`.
+**(GML)** Two of those choose a code path rather than a number:
+
+- **`accel = 0` makes it a battlestation.** `export` writes a `//battlestation`
+  tag on line 2 and the game's parser then grafts `BattleStation`'s step event
+  onto the hull — which pins `l_maxspeed` and *rotates it forever* at
+  `l_turning` per step. Fine for a station; surprising for anything else. A
+  small non-zero `accel` plus `hold: true` in the mission is the path this
+  repo's own hulls take.
+- **Core 3 and 5 (`spr_Civilian`, `spr_Platform`) carry no bridge bead**, which
+  is what you want for anything that is not a crewed ship. `export` emits the
+  `nCor2a` line they need to draw themselves at all.
 
 Undo is always available: `ship log`, `ship diff <rev>`, `ship undo`. Every
 version seen — including ones ShipMaker wrote — is committed to a shadow git

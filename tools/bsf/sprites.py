@@ -55,20 +55,27 @@ MODULES = {
 }
 MODULE_GLOW = (34, 34, 255)
 
-#: What a module's own Create event sets, for the fields `nModA`/`nModB` store.
-#: A new module has to be written with real values because `nMod2` *overrides*
-#: the object's defaults on load rather than deferring to them -- writing zeros
-#: would mount a NanoMatrix with no range that repairs nothing, which looks
-#: exactly like a working one.
+#: The sentinel every `nMod2` stat is tested against: `if argument4 != -1 then
+#: l_hp = argument4`, and the same for cost, eng, engregen, range and all eight
+#: specials. **(GML)** So `-1` is not "missing", it is *keep what the object's
+#: own Create event set* -- and a module written entirely in `-1`s comes up with
+#: exactly the stock stats. `initCustomWep` is only called when something was
+#: overridden, so the deferring path is also the one the game does least on.
+MODULE_KEEP = -1
+
+#: What a module's own Create event sets, where it has been read out of a
+#: *running game* rather than deferred to. Purely an override table: a module
+#: absent from it is written in `-1`s and behaves stock, which is why
+#: `add_module` no longer refuses one.
 #:
-#: Measured by instantiating the object in a running game and reading the
-#: variables back, not inferred: `l_special3..8` genuinely do not exist on a
-#: NanoMatrix, and `-1` is what a `.sb4` writes for an absent one (see
-#: Pendulum's ThrusterEx, whose tail is `...,-1,-1,1,0`).
-#:
-#: Only the modules that have actually been measured belong here. `add_module`
-#: refuses the rest rather than guessing, because a guessed range or cost is a
-#: module that is subtly wrong forever instead of a mount that fails loudly.
+#: An earlier note here claimed `nMod2` overrides the object's defaults rather
+#: than deferring to them, and concluded that every module had to be measured
+#: before it could be mounted. Half right, and the wrong half was load-bearing:
+#: writing **zeros** does override (0 is not -1, so it assigns 0, and a
+#: NanoMatrix with range 0 repairs nothing while looking like it works), but
+#: writing `-1` defers. The rule is "never write a zero you did not mean",
+#: not "never mount an unmeasured module" -- which had blocked Deflector and
+#: AegisDeflector, the game's only two shield modules, from being mounted at all.
 MODULE_DEFAULTS = {
     #                hp  range   eng  engregen  cost  special1..8
     'NanoMatrix': dict(hp=50, range=200, eng=500, engregen=0.40, cost=0.10,

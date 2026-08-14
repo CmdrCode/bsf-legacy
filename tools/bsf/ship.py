@@ -329,6 +329,47 @@ def do_structural(ship: model.Ship, edits, args,
     return done, f'reparent {rid} to {args.to}'
 
 
+def parse_rgb(s: str) -> int:
+    """`#RRGGBB` to the BGR integer Game Maker stores.
+
+    Authors think in RGB and the file is BGR, and the two are indistinguishable
+    on a grey. Doing the swap here means it is done once, in the place a reader
+    will look for it.
+    """
+    h = s.strip().lstrip('#')
+    if len(h) != 6:
+        raise ValueError(f'{s!r} is not #RRGGBB')
+    try:
+        r, g, b = (int(h[i:i + 2], 16) for i in (0, 2, 4))
+    except ValueError:
+        raise ValueError(f'{s!r} is not #RRGGBB') from None
+    return r + g * 256 + b * 65536
+
+
+def do_colour(ship: model.Ship, edits, args, mirror: bool):
+    """`ship colour` -- one section, a subtree, or the whole hull."""
+    colour = parse_rgb(args.to) if args.to else None
+    if str(args.id).lower() == 'all':
+        ids = [s.id for s in ship.sections]
+        what = 'all'
+    else:
+        sid = int(args.id)
+        if ship.section(sid) is None:
+            raise edits.EditError(f'no section {sid} in {ship.path.name}')
+        ids = subtree(ship, sid) if args.with_children else [sid]
+        if mirror:
+            # Colour is not a handed field, so a mirror partner wants the same
+            # value rather than a reflected one -- but it does want it, or a
+            # symmetric hull comes out odd on one side.
+            ids += [p for p in (ship.section(i).mirror for i in list(ids))
+                    if p is not None and ship.section(p) is not None]
+        what = str(sid)
+    changed = [edits.set_colour(ship, i, colour, shade=args.team or 0)
+               for i in dict.fromkeys(ids)]
+    how = args.to if args.to else f'team shade {args.team}'
+    return changed, f'colour {what} to {how}'
+
+
 def print_selection(ship: model.Ship, matches, rendered: bool,
                     as_json: bool = False) -> None:
     if as_json:
@@ -596,6 +637,20 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument('--to', type=int, required=True, help='new parent, 0 for core')
     p.add_argument('--no-mirror', action='store_true')
 
+    p = sub.add_parser('colour', aliases=['color'],
+                       help='fix a section\'s colour, or restore the team\'s')
+    p.add_argument('id', help="section id, or 'all'")
+    with_file(p)
+    g = p.add_mutually_exclusive_group(required=True)
+    g.add_argument('--to', metavar='#RRGGBB',
+                   help='a fixed colour, drawn whatever team the hull spawns into')
+    g.add_argument('--team', type=int, metavar='SHADE', choices=(0, 1, 2),
+                   help='back to the team palette, by shade index')
+    p.add_argument('--with-children', action='store_true',
+                   help='apply to the section and its whole subtree')
+    p.add_argument('--no-mirror', action='store_true',
+                   help='do not follow the nSecMir partner')
+
     p = sub.add_parser('name', help="show or set the ship's display name")
     with_file(p)
     p.add_argument('to', nargs='?', help='the new name; omit to just show it')
@@ -754,7 +809,14 @@ def main(argv: list[str] | None = None) -> int:
     ship = model.load(path)
     mirror = not getattr(args, 'no_mirror', False)
 
-    if args.cmd == 'name':
+    if args.cmd in ('colour', 'color'):
+        import edits
+        try:
+            changed, msg = do_colour(ship, edits, args, mirror)
+        except (edits.EditError, ValueError) as e:
+            print(f'✗ {e}', file=sys.stderr)
+            return 2
+    elif args.cmd == 'name':
         was = ship.name
         try:
             ship.name = args.to
