@@ -632,8 +632,8 @@ window.Inspector = (function () {
           // takes the other key with it — and the look block only means
           // something for an object.
           if (pick && pick.ship) {
-            delete e.object; delete e.sprite; delete e.scale;
-            delete e.angle; delete e.frame; delete e.tint;
+            delete e.object;
+            C.LOOK_KEYS.forEach((k) => delete e[k]);
             e.ship = pick.ship;
             if (!e.team) e.team = 'ally';
           } else {
