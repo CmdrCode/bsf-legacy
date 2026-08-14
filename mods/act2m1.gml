@@ -7,7 +7,7 @@
 
 // ---------------------------------------------------------------- dialogue
 global.a2m1_t0 = "Captain, the Coalsack storm wall is dead ahead. Ratline beacons are dark again - we'll have to thread the lanes by eye.";
-global.a2m1_t1 = "Storm cells are marked in red. They will damage any section inside them. Rogue asteroids drift through the lanes - evade them or destroy them.";
+global.a2m1_t1 = "Storm cells are red clouds. They will damage any section inside them. Rogue asteroids drift through the lanes - evade them or destroy them.";
 global.a2m1_t2 = "Follow the Ratlines# #Reach each dead beacon in sequence";
 global.a2m1_t3 = "Beacon One confirmed, Captain. Four to go.";
 global.a2m1_t4 = "Hull stress rising Captain! Recommend we keep to the lane.";
@@ -62,7 +62,8 @@ if (!variable_global_exists('a2m1_interf')) global.a2m1_interf = 0;
 // The storm is a painted mask, one cell per 50 world units: `#` damages,
 // `@` damages harder, `.` is clear space. This is the only description of the
 // storm in the file — the red wash, the gas clouds and the damage test are all
-// read from these rows, so what the editor paints is exactly what bites.
+// read from these rows. What bites is the row, not the cloud: a puff is many
+// cells wide, so the gas laps over clear space the mask says nothing about.
 global.a2m1_cellsz = 50;
 global.a2m1_cols = 100;
 global.a2m1_rows = 40;
@@ -211,11 +212,18 @@ object_event_add(global.a2m1_stormobj, 3, 0,
     'sc = floor(x / global.a2m1_cellsz);' +
     'if (sr >= 0) { if (sr < global.a2m1_rows) { if (sc >= 0) { if (sc < global.a2m1_cols) {' +
     'sv = global.a2m1_g[sr * global.a2m1_cols + sc];' +
-    'if (sv = 1) l_hp -= global.a2m1_d1;' +
-    'if (sv = 2) l_hp -= global.a2m1_d2;' +
+    'if (sv = 1) damage(global.a2m1_d1, id);' +
+    'if (sv = 2) damage(global.a2m1_d2, id);' +
     '} } } }' +
     '}' +
     '}' +
+    'sr = floor(global.a2m1_ship.y / global.a2m1_cellsz);' +
+    'sc = floor(global.a2m1_ship.x / global.a2m1_cellsz);' +
+    'if (sr >= 0) { if (sr < global.a2m1_rows) { if (sc >= 0) { if (sc < global.a2m1_cols) {' +
+    'sv = global.a2m1_g[sr * global.a2m1_cols + sc];' +
+    'if (sv = 1) damage(global.a2m1_d1, global.a2m1_ship);' +
+    'if (sv = 2) damage(global.a2m1_d2, global.a2m1_ship);' +
+    '} } } }' +
     '}');
 object_event_clear(global.a2m1_stormobj, 8, 0);
 object_event_add(global.a2m1_stormobj, 8, 0,
@@ -343,7 +351,7 @@ object_event_add(global.a2m1_ctr, 2, 2,
 object_event_clear(global.a2m1_ctr, 2, 5);
 object_event_add(global.a2m1_ctr, 2, 5,
     'if (global.a2m1_meteors = 1) {' +
-    'if (instance_number(obs_Meteor) < 8) {' +
+    'if (instance_number(obs_Meteor) < 48) {' +
     'if (instance_exists(global.a2m1_ship)) {' +
     'var mm, px, py;' +
     'px = global.a2m1_ship.x; py = global.a2m1_ship.y;' +
@@ -354,7 +362,7 @@ object_event_add(global.a2m1_ctr, 2, 5,
     'mm.image_yscale = mm.image_xscale;' +
     '}' +
     '}' +
-    'alarm[5] = 210;' +
+    'alarm[5] = 35;' +
     '}');
 object_event_clear(global.a2m1_ctr, 2, 6);
 object_event_add(global.a2m1_ctr, 2, 6,

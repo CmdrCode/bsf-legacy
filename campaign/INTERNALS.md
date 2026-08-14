@@ -130,8 +130,9 @@ events, no `&&` short-circuit, no string escapes, `var` before `with`.
 A storm is **one painted mask over the room**, not a list of circles: `.`
 clear, `#` damaging, `@` hot, one character per `cell` world units. It is the
 only description of the storm anywhere — the gas clouds you can see are
-scattered over the same cells that take your HP, so there is no way for the
-danger and the picture to disagree. `tools/editor` paints it.
+scattered over the same cells that take your HP, so no cell can be dangerous
+without being marked. It does not follow that everything red is dangerous; see
+below. `tools/editor` paints it.
 
 - The mask rows are emitted as `global.<id>_mrow[N]` and **decoded once per
   load, in plain file scope**, into a flat `global.<id>_g[]` array. That makes
@@ -151,6 +152,72 @@ danger and the picture to disagree. `tools/editor` paints it.
   keeps a painted edge legible without drawing an outline.
 - `zones:` (the older `{x, y, r, dmg}` circles) still parses and is rasterised
   into the same mask at build time. The editor only ever writes a mask.
+
+**The hit goes through `damage(amount, section)`, never through `l_hp -=`.**
+BSF has no `l_hp <= 0` check anywhere — a section has no death test of its own,
+so *destroying* it is the attacker's job, and `damage()` is where every weapon
+and every asteroid does it: below one tick's worth of HP it calls
+`instance_destroy()` and debits `l_owner.l_syshp` by what was left, otherwise it
+subtracts from both. (Its body is not in the plaintext object tree; the exe's
+script section is zlib'd and byte-substituted, and
+`_local/research/SCRIPT-OBFUSCATION.md` is how it comes back out.)
+
+Subtracting from `l_hp` by hand skips both halves, which is what the storm did
+until 2026-08-14 and it made the storm **decorative**: no section it damaged
+could ever be destroyed however long you sat in the gas, and the system bar
+(`l_syshp/l_maxsyshp`, the second of the two the HUD draws) never moved. Its one
+real effect was invisible — `l_hp` went negative, so the next bullet to touch
+that section one-shot it.
+
+**The hull is a second pool and needs its own hit.** A BSF ship draws two bars:
+`l_hp/l_maxhp` on the ship instance, and `l_syshp/l_maxsyshp` summed from the
+sections and turrets hanging off it. `ctr_Ship` has no step that reads the
+second, so **losing every section does not destroy the ship** — measured in
+game: a Hestia stripped to `sections = 0` kept flying, `global.<id>_failed`
+stayed 0, and the mission carried on. Only `damage(d, <the ship>)` empties the
+hull pool and raises MISSION FAILED. The Step therefore tests the ship's own
+position as well as each section's. `damage()` skips the `l_syshp` debit for
+anything parented to `ctr_Ship`, so the hull hit correctly does not also
+discount the parts.
+
+Verified in game on 2026-08-14, ship parked in a `#` cell: Δ`l_syshp` equalled
+Δ(sum of section `l_hp`) at every sample, the hull fell at the same 0.3/step as
+the sections, and raising `d1` to compress the exposure took the ship to the
+MISSION FAILED screen through the shipped code path. No new lines in
+`game_errors.log`, which is the only way to know a mod's GML compiled at all.
+
+Two things the mask does *not* promise, both worth knowing before tuning it:
+
+- **The picture is wider than the bite.** `spr_Nebula` is 400×400 with a centred
+  origin, drawn at scale 1–2.2, and its radial intensity is half-peak out to
+  69px and quarter-peak to 165px. So one puff marking a 50-unit cell reads as red
+  out to 1.4–3 cells at half brightness and up to 9 at the faint edge. The cells
+  a puff is *spawned* in always bite — the scatter loop only visits `sv > 0` and
+  the Step reads the same array — but the converse does not hold, and gas visibly
+  laps over clear space.
+- **The storm is the player's alone.** The Step filters
+  `if (l_owner = global.<id>_ship)`, so enemies and allies fly the same cells for
+  free. That is a choice, not an oversight; it is also why the loop is cheap.
+
+## Meteors (`meteors:` in the mission YAML, `meteors: on|off` on a beat)
+
+Alarm 5 on the controller, gated by `global.<id>_meteors`: one `obs_Meteor` per
+firing into a band ahead of the ship (`x + 500..800`, `y ± 400` — one view tall),
+`direction` 150–210 so the rocks come back through it head-on.
+
+**`cap` is the density; `interval` is only the refill rate.** A rock lives until
+it leaves the room — `obs_Meteor`'s Alarm 2 divides the distance to the edge by
+its own speed and Alarm 1 destroys it there — which for EP9's 5000-unit room at
+~1.6 units/step is about a minute. Long enough that the population saturates at
+`cap` and sits there, so `interval` decides only how long an empty field takes to
+fill (`cap * interval` frames), and it has to stay well inside that lifetime or
+the cap is never reached. Scale the pair together — `cap` ×6, `interval` ÷6 — and
+the field gets six times denser on the same ramp. Both are on the editor's
+mission sheet (`m`), labelled *density* and *refill*.
+
+The mission's own spawn overrides `direction`, `speed` and `image_*scale` after
+`instance_create`; that lands before Alarm 2 first runs, so the lifetime is
+computed from the mission's velocity and not from `obs_Meteor`'s own random one.
 
 ## Interference (`interference: on|off` on a beat)
 

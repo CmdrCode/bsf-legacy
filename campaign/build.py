@@ -86,7 +86,22 @@ KNOWN_CALLS = {
     "missionFail", "missionSucc", "saveGame", "stopMusic", "bgm_Play",
     # The game's own ship-file loader, as used by the sandbox's spawn-ship.
     "importShip",
+    # `damage(amount, target)` — the one way anything in BSF hurts anything.
+    # Every weapon and every asteroid goes through it, and it is where a section
+    # is destroyed and where `l_owner.l_syshp` is debited; nothing polls `l_hp`
+    # for death. The storm calls it for the same reason. Its body is not in the
+    # plaintext object tree — the exe's script section is zlib'd and byte
+    # substituted, and `_local/research/SCRIPT-OBFUSCATION.md` is how it comes
+    # back out.
+    "damage",
 }
+
+#: `meteors:` when the mission does not say. See the alarm-5 emitter for what
+#: the pair means — `cap` is the density, `interval` only the refill rate. The
+#: editor's mission sheet keeps its own copy of these two numbers (core.js,
+#: `Meteors.DEFAULTS`) so a mission with no block still has something to edit;
+#: they are the same numbers and want changing together.
+METEORS = {"interval": 240, "cap": 8}
 
 
 class Lint:
@@ -724,7 +739,8 @@ if (global.{g}_imp >= 0) {{
 // The storm is a painted mask, one cell per {st.cell} world units: `#` damages,
 // `@` damages harder, `.` is clear space. This is the only description of the
 // storm in the file — the red wash, the gas clouds and the damage test are all
-// read from these rows, so what the editor paints is exactly what bites.
+// read from these rows. What bites is the row, not the cloud: a puff is many
+// cells wide, so the gas laps over clear space the mask says nothing about.
 global.{g}_cellsz = {st.cell};
 global.{g}_cols = {st.cols};
 global.{g}_rows = {st.rows};
@@ -810,6 +826,44 @@ if (sv = 2) pf.image_blend = make_color_rgb(255, 130 + random(60), 55 + random(4
         # The pause guard is above them so a frozen storm stays frozen mid-bolt;
         # the edit-rules guard is below, so a mission being written still storms,
         # it just cannot kill you.
+        #
+        # ⚠ The hit goes through the game's own `damage(amount, target)` script,
+        # never through `l_hp -=`, and the difference is the whole effect. In BSF
+        # a section has no "am I dead?" test of its own — there is no `l_hp <= 0`
+        # check anywhere in the game — so destruction is the *attacker's* job,
+        # and `damage()` is where every weapon and every asteroid does it:
+        #
+        #     if target.l_hp <= amount  ->  target.instance_destroy(), and
+        #                                   target.l_owner.l_syshp -= target.l_hp
+        #     else                      ->  target.l_hp -= amount, and
+        #                                   target.l_owner.l_syshp -= amount
+        #
+        # Subtracting from `l_hp` by hand skips both halves. The storm did that
+        # until 2026-08-14, which made it decorative: no section it damaged could
+        # ever be destroyed however long you sat in the gas, and the ship's system
+        # bar (`l_syshp/l_maxsyshp`, the second HUD bar) never moved. Its one real
+        # effect was invisible — `l_hp` went negative, so the next bullet to touch
+        # that section one-shot it.
+        #
+        # Destroying inside `with (ShipSection)` is the pattern the stock
+        # explosion code already runs — `with (ctr_Player) { ... if l_hp <= dmg
+        # then instance_destroy() ... }` — and a section's Destroy event cascades
+        # to its children from inside that same loop there too. Whatever GM7 does
+        # about an instance the loop has yet to reach, the game has been doing it
+        # since 0.90d.
+        #
+        # ⚠ The hull is a **separate pool and a separate hit**, and without it the
+        # storm still could not kill: measured in-game on 2026-08-14, a Hestia
+        # stripped to zero sections keeps flying, `global.<id>_failed` stays 0 and
+        # the mission carries on. BSF ships carry two bars — `l_hp/l_maxhp` on the
+        # ship instance and `l_syshp/l_maxsyshp` summed from the parts — and
+        # `ctr_Ship` has no step that reads the second, so nothing about losing
+        # every section destroys the ship. Only `damage(d, <the ship>)` does, and
+        # that is what raises MISSION FAILED. Hence the second test below, on the
+        # ship's own position: the sections are the parts you lose, the hull is
+        # the thing that dies. `damage()` skips the `l_syshp` debit for anything
+        # parented to `ctr_Ship`, so hitting the hull correctly does not also
+        # discount the parts hanging off it.
         step = f"""
 var sr, sc, sv;
 if (global.ed_pause) exit;
@@ -823,11 +877,18 @@ sr = floor(y / global.{g}_cellsz);
 sc = floor(x / global.{g}_cellsz);
 if (sr >= 0) {{ if (sr < global.{g}_rows) {{ if (sc >= 0) {{ if (sc < global.{g}_cols) {{
 sv = global.{g}_g[sr * global.{g}_cols + sc];
-if (sv = 1) l_hp -= global.{g}_d1;
-if (sv = 2) l_hp -= global.{g}_d2;
+if (sv = 1) damage(global.{g}_d1, id);
+if (sv = 2) damage(global.{g}_d2, id);
 }} }} }} }}
 }}
 }}
+sr = floor(global.{g}_ship.y / global.{g}_cellsz);
+sc = floor(global.{g}_ship.x / global.{g}_cellsz);
+if (sr >= 0) {{ if (sr < global.{g}_rows) {{ if (sc >= 0) {{ if (sc < global.{g}_cols) {{
+sv = global.{g}_g[sr * global.{g}_cols + sc];
+if (sv = 1) damage(global.{g}_d1, global.{g}_ship);
+if (sv = 2) damage(global.{g}_d2, global.{g}_ship);
+}} }} }} }}
 }}
 """
         # Alarm 0: one lightning strike. Both ends are picked from filled cells
@@ -1180,9 +1241,25 @@ missionFail({fail_t});
 }}
 """
         # -- alarm 5: meteor spawner
+        #
+        # Two numbers, and between them they are the density. `cap` is the one
+        # that sets it: a meteor lives until it leaves the room (obs_Meteor's own
+        # alarm 2 computes the time to the edge from its velocity and alarm 1
+        # destroys it there), which for a rock crossing EP9's 5000-unit room at
+        # ~1.6 units/step is around a minute — long enough that the population
+        # saturates at `cap` and stays there. `interval` is only the refill rate:
+        # one rock per alarm, so an empty field reaches `cap` after cap*interval
+        # frames and it wants to be well under the lifetime or the cap is never
+        # reached. Scale the two together and the field gets denser at the same
+        # ramp — 6x density is cap*6 with interval/6.
+        #
+        # The band is ahead of the ship (x + 500..800) and one view tall
+        # (y ± 400), and `direction` 150..210 walks the rocks back through it, so
+        # the author's density is what arrives head-on, not what exists somewhere
+        # in the room.
         met = m.get("meteors", {})
-        interval = met.get("interval", 240)
-        cap = met.get("cap", 8)
+        interval = met.get("interval", METEORS["interval"])
+        cap = met.get("cap", METEORS["cap"])
         meteor = f"""
 if (global.{g}_meteors = 1) {{
 if (instance_number(obs_Meteor) < {cap}) {{

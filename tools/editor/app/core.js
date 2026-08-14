@@ -155,6 +155,31 @@ window.Core = (function () {
     },
   };
 
+  // ----------------------------------------------------------------- meteors
+  /* The rock field, in build.py's two terms. `cap` is the density and `interval`
+     is only how fast an empty field refills: a rock lives until it leaves the
+     room — about a minute crossing EP9 — so the population saturates at `cap`
+     and sits there, and `interval` matters only in that cap*interval frames has
+     to fit inside that lifetime or the cap is never reached. Scaling the pair
+     together (cap x6, interval /6) makes the field denser at the same ramp.
+
+     `ensure` exists for the same reason Storm.ensure does: a mission file need
+     not carry the block, and the mission sheet still has to be able to edit it.
+     DEFAULTS is build.py's METEORS — the same two numbers on the other side of
+     the wire, and they want changing together. */
+  const Meteors = {
+    DEFAULTS: { interval: 240, cap: 8 },
+    ensure(m) {
+      if (!m.meteors) m.meteors = Object.assign({}, Meteors.DEFAULTS);
+      // A block that names one of the two is legal in the file; the compiler
+      // defaults the other, so the sheet must show the same value it will get.
+      for (const k in Meteors.DEFAULTS) {
+        if (m.meteors[k] == null) m.meteors[k] = Meteors.DEFAULTS[k];
+      }
+      return m.meteors;
+    },
+  };
+
   // ------------------------------------------------- beat numbering (build.py)
   // Beat 0 runs from alarm[2] with the counter still 0. Every later beat claims
   // the next rung; `wait: gate` reserves one extra slot so the MoveToArea's own
@@ -807,13 +832,14 @@ window.Core = (function () {
     nebula: 'ter_Nebula scattered over the room at create',
     storm: ["# The storm — a painted field, not a list of circles. One cell is `cell`",
       "# world units; '#' costs a section `dmg` HP per step, '@' costs `hot`, '.' is",
-      '# clear space. The red gas clouds are drawn from these same cells, so what',
-      '# you can see is exactly what bites. Paint it in tools/editor.'],
+      '# clear space. The gas clouds are scattered over these same cells, but a',
+      '# cloud is many cells wide — gas laps over clear space, and only the mask',
+      '# bites. Paint it in tools/editor.'],
     density: 'gas-cloud puffs per filled cell',
     lightning: 'average frames between strikes (0 = none)',
     gates: ['# Dead beacons flown in order (MoveToArea gates).'],
     interval: 'frames between spawn attempts while on',
-    cap: 'max live obs_Meteor',
+    cap: 'max live obs_Meteor — this is the density',
   };
 
   function toYaml(m) {
@@ -1032,6 +1058,6 @@ window.Core = (function () {
     onoff, esc, brk, sayClass, spawnLabel,
     numberBeats, advanceOf, actionsOf, geoOf, stateAt, pingAt, pingAnchors,
     noteLines, noteText, noteFrom, getPath, setPath,
-    lint, drawMap, toYaml, Model, Storm,
+    lint, drawMap, toYaml, Model, Storm, Meteors,
   };
 })();
