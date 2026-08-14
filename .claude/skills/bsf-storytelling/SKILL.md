@@ -69,6 +69,40 @@ count reaching zero, timer expiring). Write scenarios in that shape:
 - Missions end with **Mission Accomplished** — and the game lets villains have
   the last word (EP8 ends on Nagaya's "Coward!"). Don't over-resolve.
 
+## Where your reasoning goes: `note:`, never a `#` comment
+
+**Put every explanation you write about a mission in that beat's `note:` field.**
+Not in a `#` comment in the YAML — those do not survive.
+
+`campaign/missions/*.yaml` is edited by `tools/editor` as well as by hand, and
+the editor parses the file into a model and writes it back out of that model.
+Comments live in neither, so **the next save deletes them silently**. This is
+not a hypothetical: a measured derivation of a camera position and the placement
+reasoning for four berthed hulls were both written as `#` comments in EP9 and
+both were gone the next time the mission was applied, leaving a bare magic
+number where the working had been.
+
+`note:` is a real key on a beat — a list of lines, like the storm mask, so it
+diffs by the line. It compiles to nothing, the game never sees it, and it
+appears in the generated transcript under the beat it explains.
+
+```yaml
+  - note:
+      - "Aimed at the yard's centre, not the approach: at 2760 the station's"
+      - "core sat under the HUD column and two berthed hulls were off-screen."
+      - "x is 3406 + 31 because a pan parks short of its target in the"
+      - "direction it came from — measured at 31.15 across three runs."
+    camera: {x: 3437, y: 917, speed: 90}
+```
+
+In the editor it is the **note** card in the beat rail, and `+ note` adds one to
+a beat that has none; a beat carrying one shows ✎ on the track.
+
+What belongs in it: where a number came from and how it was measured, what was
+tried and rejected, what a value depends on so the next person knows what breaks
+it. What does not: restating what the beat plainly does, or narrative intent —
+that is what `campaign/ACT-II.md` is for.
+
 ## The voice
 
 - The player is **never named** — addressed by rank only (Captain / Commodore /
@@ -149,3 +183,7 @@ it.
   as the production treatment; Cherenkov line reworded per user pick.
 - 2026-08-08 — Act titles named by the user: Act I "Pirate Incursion",
   Act II "Legacy of the Fleet".
+- 2026-08-13 — "Where your reasoning goes" added at the user's instruction,
+  after the editor's save silently erased two blocks of `#`-comment reasoning
+  from `ep9.yaml`. `note:` was added to the mission DSL in the same session as
+  the durable place for it.

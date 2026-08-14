@@ -12,7 +12,7 @@ title: Bolthole
 subtitle: Act II - Episode 9
 
 room:
-  width: 3000
+  width: 5000
   height: 2000
   caption: Bolthole
 
@@ -28,21 +28,64 @@ fail:
 scenery:
   nebula: 16          # ter_Nebula scattered over the room at create
 
-# Storm cells — deadly red circles. Damage is HP per step to any player
-# section inside the radius.
-zones:
-  - {x: 950,  y: 520,  r: 240, dmg: 0.30}
-  - {x: 1180, y: 1520, r: 280, dmg: 0.30}
-  - {x: 1700, y: 700,  r: 260, dmg: 0.30}
-  - {x: 2050, y: 1350, r: 240, dmg: 0.30}
-  - {x: 1450, y: 1050, r: 170, dmg: 0.40}
+# The storm — a painted field, not a list of circles. One cell is 50 world
+# units; '#' costs a section `dmg` HP per step, '@' costs `hot`, '.' is clear
+# space. The red gas clouds are drawn from these same cells, so what you can
+# see is exactly what bites. Paint it in tools/editor.
+storm:
+  cell: 50
+  dmg: 0.3
+  hot: 0.4
+  density: 0.18       # gas-cloud puffs per filled cell
+  lightning: 90       # average frames between strikes (0 = none)
+  mask:
+    - "...........................................#................##.........##############..............."
+    - "........#.........#........................##...........................#############.....######...."
+    - "##.################...........................#..........................###.#######....#########..."
+    - "#....#@@@.....##.........####........@@@......................................#####....###########.."
+    - "#....#@@@@@@.#.....@@@###...##.......@@@..............................................############.."
+    - "#.....@@@@@@@......@@@#......#####...@@@..............................................#############."
+    - "#...####.@@@@......@@@................................................................#############."
+    - "#####...##@@@......##.............#...................................................##############"
+    - "............@@@...##..............#...................................................##############"
+    - "...........#@@@..##.#.............#.#..................................................#############"
+    - ".........#.#@@@.##.##...............#...................................................############"
+    - ".........###...##.##...............##.....................................................##########"
+    - "...............#.#.................##......................................................#########"
+    - "...............#...................##.......................................................########"
+    - ".............@@@@...................#........................................................#######"
+    - ".............@@@@............................................................................#######"
+    - ".............@@@@............................................................................#######"
+    - "..............#..............................................................................#######"
+    - ".............#...............................................................................#######"
+    - ".............#...............................................................................#######"
+    - ".............#...............................................................................#######"
+    - ".............................................................................................#######"
+    - ".............................................#...............................................#######"
+    - "............................#................................................................#######"
+    - "...........................##...............#...............................................########"
+    - "...........................##...............#...............................................########"
+    - "...........................#.................#..............................................########"
+    - "...........................#...............................................................#########"
+    - "..........................#................#.#.............................................#########"
+    - ".........................###.................#............................................##########"
+    - ".#.......................####............................................................###########"
+    - ".##......................#####..........................................................############"
+    - ".##......................#...##............#...........................................#############"
+    - "..#......................#####@@@.....................................................#############."
+    - "..#@@@.....................##.@@@..............##....................................##############."
+    - "..#@@@........................@@@..............@@@............................#####..##############."
+    - "..@@@@.........................##.............#@@@...........................#######.#############.."
+    - "..@@@@#........##...#...........#.......#######@@@..........................#####################..."
+    - "..@@@@.........####..............#..#####.................#####..#####......###################....."
+    - "..................................###....................##############.....##################......"
 
 # The Ratlines — dead beacons flown in order (MoveToArea gates).
 gates:
-  - {x: 760,  y: 1180}
-  - {x: 1230, y: 780}
-  - {x: 1660, y: 1180}
-  - {x: 2120, y: 860}
+  - {x: 724, y: 1448}
+  - {x: 1314, y: 739}
+  - {x: 1911, y: 1222}
+  - {x: 2269, y: 741}
   - {x: 2520, y: 1120}
 
 meteors:
@@ -53,6 +96,7 @@ beats:
   - start: true
     music: stop
     eerie: on
+    interference: on
     camera: {x: 260, y: 1000, speed: 0}
     say:
       who: "[Hint]"
@@ -69,9 +113,9 @@ beats:
       sprite: spr_MesHint
       text: "Storm cells are marked in red. They will damage any section inside them. Rogue asteroids drift through the lanes - evade them or destroy them."
 
-  - objective: "Follow the Ratlines# #Reach each dead beacon in sequence"
+  - meteors: on
+    objective: "Follow the Ratlines# #Reach each dead beacon in sequence"
     gate: 0
-    meteors: on
     wait: gate
 
   - autosave: true
@@ -106,8 +150,8 @@ beats:
 
   - say:
       who: Bolthole Approach
-      color: red
       sprite: spr_MesHQ
+      color: red
       text: "Unidentified contact, this is Bolthole Approach. You are inside the perimeter. Authenticate immediately or be fired upon."
 
   - say:
@@ -115,19 +159,65 @@ beats:
       sprite: spr_MesMan1
       text: "Transmitting authentication..."
 
-  - autosave: true
-    meteors: off
+  - meteors: off
+    autosave: true
     say:
       who: Bolthole Approach
       sprite: spr_MesHQ
       text: "Authentication confirmed. Guns to standby. Welcome home, Captain."
 
-  - music: theme
+  - note:
+      - "The reveal. The camera is aimed at the yard's measured centre, not at"
+      - "the approach: with art, station and berths span world 2849-3962 x"
+      - "615-1219, so 1113 x 604, centred on (3405.5, 917)."
+      - ""
+      - "centreCamera already frames the part of the view the player can see."
+      - "Measured at speed 0, view_xview comes out at exactly"
+      - "argument - (view_wview[0] - GUI_MinimapSize * l_zoom) / 2, and"
+      - "view_yview at argument - view_hview[0] / 2 - so it reads the live view"
+      - "and discounts the HUD column itself, and that aim holds at any aspect."
+      - ""
+      - "x is therefore 3406 plus 31: a pan does not reach its target, it parks"
+      - "short of it in the direction it came from, and this pan always comes"
+      - "from the left because the player flies in from x 260. Measured at 31.15"
+      - "and identical across three runs. y needs no such term - the pan is"
+      - "almost pure x. Change the approach and this term changes with it:"
+      - "re-read view_xview rather than assuming it holds."
+      - ""
+      - "What does NOT survive a change of aspect is the fit. mods/aspect.gml"
+      - "sets view_wview[0] = round(view_hview[0] * display_w / display_h) with"
+      - "the height pinned at 768, so the clear width is 768*aspect - 160: 1205"
+      - "at 16:9, 1069 at 16:10, 864 at 4:3. The yard needs 1113, so at 16:10 and"
+      - "narrower the outer berths lose their tips wherever this points. 604 tall"
+      - "against 768 always fits."
+      - ""
+      - "Aimed at the approach (2760) the station's core sat under the HUD column"
+      - "and two of the four berthed hulls were off-screen entirely."
+      - ""
+      - "The berths: the station is drawn at facing 90, which maps its design"
+      - "(x, y) to world (y, -x) - the arms sit at design y -468/-291/+291/+468"
+      - "and reach design x 252, so their tips are world y 850 at x 3409 +/- 468"
+      - "and +/- 291. Each hull is nose-in at facing 270 and every y below is set"
+      - "so all four bows land on world y 878, i.e. 28 *into* the arm tips. The"
+      - "overlap is the point: at a clean tangent they read as four ships parked"
+      - "near a station, and only contact reads as moored. Bow reach is measured"
+      - "in pixels, not off the section origin (Hecate and Athena 171, Cronus"
+      - "103, Hestia 78), because section art runs ~40 past its origin and"
+      - "measuring on centres puts every hull 40 short. The inboard pair is"
+      - "nudged 11 off the arm centres: Cronus is 210 across the beam and Hecate"
+      - "162, needing 186 of separation where the arms give 177. That leaves 13"
+      - "clear between them, and each hull still straddles its own arm."
+    music: theme
     eerie: off
+    interference: off
+    camera: {x: 3437, y: 917, speed: 90}
     spawn:
-      - {object: SpaceStation, x: 2760, y: 1050, name: station}
-      - {object: ter_Planet, x: 2900, y: 860}
-    camera: {x: 2760, y: 1050, speed: 90}
+      - {ship: "mods/ships/station_bolthole.shp", team: ally, hold: true, facing: 90, x: 3409, y: 1102, name: station}
+      - {object: ter_Planet, x: 3095, y: 461}
+      - {object: Hecate, hold: true, facing: 270, damage: 0.28, x: 2930, y: 707, name: berth1}
+      - {object: Cronus, hold: true, facing: 270, damage: 0.34, x: 3129, y: 775, name: berth2}
+      - {object: Athena, hold: true, facing: 270, damage: 0.22, x: 3700, y: 707, name: berth3}
+      - {object: Hestia, hold: true, facing: 270, damage: 0.4, x: 3877, y: 800, name: berth4}
     say:
       who: Fleet HQ
       sprite: spr_MesHQ
@@ -147,12 +237,12 @@ beats:
       who: Fleet Admiral Hong
       sprite: spr_MesHong
       text: "It's been a long time since Sol, old friend. Bring your ship alongside the naval yard. There's something I want you to see."
-    gate_at: {x: 2680, y: 1140}
+    gate_at: {x: 3387, y: 825}
     wait: gate
 
   - spawn:
-      - {object: Hestia, x: 2610, y: 1210, name: hestiax}
-    ping: [2610, 1210]
+      - {object: Hestia, x: 3384, y: 701, name: hestiax}
+    ping: hestiax
     say:
       who: Fleet Admiral Hong
       sprite: spr_MesHong

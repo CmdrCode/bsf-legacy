@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BSF mission editor</title>
+<style>
+/* The tokens campaign/build.py's own viewer renders with, so the editor and the
+   generated beat script read as one thing. */
+:root {
+  --ground:#06090a; --panel:#0c1214; --panel2:#101819; --rule:#1d2a2a; --rule-soft:#16201f;
+  --ink:#c6d3cd; --ink-dim:#8b9c95; --ink-faint:#5d6d68;
+  --phos:#4ef08a; --phos-hot:#00ff00; --hostile:#ff5a4d; --alien:#ff5cff; --log:#f2f7f4;
+  --amber:#ffb648; --ghost:#7fd8ff;
+  --mono:ui-monospace,"SF Mono","Cascadia Mono","JetBrains Mono","DejaVu Sans Mono",Consolas,monospace;
+  --serif:Charter,"Bitstream Charter","Iowan Old Style",Georgia,serif;
+}
+* { box-sizing:border-box; }
+html,body { height:100%; }
+body { margin:0; background:var(--ground); color:var(--ink); font:14px/1.5 var(--mono); overflow:hidden; }
+::-webkit-scrollbar { width:9px; height:9px; }
+::-webkit-scrollbar-thumb { background:#1b2626; border-radius:4px; }
+::-webkit-scrollbar-track { background:transparent; }
+
+#shell { display:grid; grid-template-rows:34px minmax(0,1fr); height:100vh; }
+#top { display:flex; align-items:center; gap:8px; padding:0 10px; background:var(--panel2);
+       border-bottom:1px solid var(--rule); user-select:none; }
+#top .brand { font-size:10px; letter-spacing:.2em; text-transform:uppercase; color:var(--phos); }
+#top .brand small { color:var(--ink-faint); letter-spacing:.1em; margin-left:.6em; }
+#top select { font:11px var(--mono); background:#070d0e; color:var(--ink); border:1px solid var(--rule);
+              border-radius:2px; padding:3px 6px; }
+#top button { all:unset; cursor:pointer; font:10px/1 var(--mono); letter-spacing:.1em; text-transform:uppercase;
+              padding:6px 9px; border:1px solid var(--rule); border-radius:2px; color:var(--ink-dim); }
+#top button:hover { border-color:var(--phos); color:var(--phos); }
+#top button.hot { border-color:rgba(255,182,72,.5); color:var(--amber); }
+#top button[disabled] { opacity:.35; cursor:default; border-color:var(--rule); color:var(--ink-faint); }
+#top .sep { width:1px; height:16px; background:var(--rule); }
+#top .grow { margin-left:auto; }
+.chip { font-size:9.5px; letter-spacing:.1em; text-transform:uppercase; padding:3px 7px;
+        border:1px solid var(--rule); border-radius:2px; color:var(--ink-faint); white-space:nowrap; }
+.chip.ok { color:var(--phos); border-color:rgba(78,240,138,.35); }
+.chip.bad { color:var(--hostile); border-color:rgba(255,90,77,.45); }
+.chip.warn { color:var(--amber); border-color:rgba(255,182,72,.45); }
+.chip.live { color:var(--ghost); border-color:rgba(127,216,255,.4); }
+#stage { position:relative; min-height:0; overflow:hidden; }
+
+/* Lint surface: the errors build.py would reject, in the editor, before a save. */
+#lintbox { position:fixed; left:50%; transform:translateX(-50%); top:44px; z-index:80; width:min(760px,92vw);
+           background:#12080a; border:1px solid rgba(255,90,77,.55); border-radius:2px; padding:9px 12px;
+           font-size:11px; color:var(--hostile); display:none; max-height:40vh; overflow:auto; }
+#lintbox.on { display:block; }
+#lintbox h6 { margin:0 0 5px; font:9.5px/1 var(--mono); letter-spacing:.16em; text-transform:uppercase; color:var(--hostile); }
+#lintbox div { padding:1px 0; color:#ffb0a6; }
+#lintbox .warn { color:var(--amber); }
+#toast { position:fixed; left:50%; transform:translateX(-50%); bottom:22px; z-index:90; padding:8px 14px;
+         background:#0b1214; border:1px solid var(--rule); border-radius:2px; font-size:11px;
+         color:var(--ink); opacity:0; transition:opacity .15s; pointer-events:none; max-width:70vw; }
+#toast.on { opacity:1; }
+#toast.bad { border-color:rgba(255,90,77,.5); color:var(--hostile); }
+#toast.good { border-color:rgba(78,240,138,.4); color:var(--phos); }
+</style>
+</head>
+<body>
+<div id="shell">
+  <div id="top">
+    <span class="brand">BSF<small>mission editor</small></span>
+    <select id="missions" title="Act II YAML missions"></select>
+    <button id="sheet" title="mission sheet: room size, player start, failure text (m)">mission</button>
+    <span class="chip lint"></span>
+    <span class="chip dirty" hidden>unsaved</span>
+    <button id="save" title="write the YAML, build, install, reload the game (ctrl/cmd-S)">save + apply</button>
+    <span class="sep"></span>
+    <button id="undo" title="undo (ctrl/cmd-Z)">undo</button>
+    <span class="grow"></span>
+    <span class="chip art"></span>
+    <span class="chip live gamechip">game: —</span>
+    <button id="launch">launch</button>
+    <button id="pause" disabled>pause</button>
+    <button id="edit" disabled title="editor rules: no storm damage, no missionFail">edit rules</button>
+    <button id="paint" title="paint the storm mask on the map (b)">paint storm</button>
+    <button id="ghosts" disabled title="draw the running game's instances over the prediction">ghosts: off</button>
+    <button id="quit" disabled>stop</button>
+  </div>
+  <div id="stage"></div>
+</div>
+<style id="editor-css"></style>
+<div id="lintbox"></div>
+<div id="toast"></div>
+
+<script src="core.js"></script>
+<script src="assets.js"></script>
+<script src="timeline.js"></script>
+<script src="paint.js"></script>
+<script src="handles.js"></script>
+<script src="view.js"></script>
+<script src="mission.js"></script>
+<script src="ships.js"></script>
+<script src="live.js"></script>
+<script src="inspector.js"></script>
+<script src="app.js"></script>
+</body></html>

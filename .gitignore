@@ -33,6 +33,19 @@ gallery/
 *.shp
 *.sb4
 
+# ...except the campaign's own ships. `mods/ships/` holds hulls WE designed in
+# ShipMaker -- original work that the campaign depends on, and that the
+# installer copies into the player's game like any other module. Both forms are
+# tracked: the `.sb4` is the editable source and the `.shp` is what the game
+# actually loads, and a `.shp` that has fallen behind its `.sb4` is a real bug
+# that must be visible in the history rather than only on someone's disk.
+#
+# ⚠ A ship copied out of the game's own `Custom Ships/` is extracted game data
+# and must NEVER be placed here. Reference those in place; they ship with every
+# copy of v0.90d already.
+!mods/ships/*.sb4
+!mods/ships/*.shp
+
 # Files GENERATED from the game's own GML -- these are derivative works and must
 # be rebuilt by each user from their own copy, never redistributed.
 mods/crisp_widgets.gml
@@ -66,6 +79,12 @@ build/
 toolchain/
 __pycache__/
 *.pyc
+
+# campaign/build.py's own output. The .gml it emits is already covered above as
+# a file generated from the game's GML; this is the rest of what it writes -- the
+# beat-script viewer. Same rule, different reason: ship the generator, never its
+# output. The mission YAML beside it is the source and stays tracked.
+campaign/out/
 
 # Per-machine git hooks, and the root symlink to the local half of CLAUDE.md
 # (the file itself lives under _local/, which is already excluded above).

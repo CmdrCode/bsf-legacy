@@ -55,6 +55,26 @@ MODULES = {
 }
 MODULE_GLOW = (34, 34, 255)
 
+#: What a module's own Create event sets, for the fields `nModA`/`nModB` store.
+#: A new module has to be written with real values because `nMod2` *overrides*
+#: the object's defaults on load rather than deferring to them -- writing zeros
+#: would mount a NanoMatrix with no range that repairs nothing, which looks
+#: exactly like a working one.
+#:
+#: Measured by instantiating the object in a running game and reading the
+#: variables back, not inferred: `l_special3..8` genuinely do not exist on a
+#: NanoMatrix, and `-1` is what a `.sb4` writes for an absent one (see
+#: Pendulum's ThrusterEx, whose tail is `...,-1,-1,1,0`).
+#:
+#: Only the modules that have actually been measured belong here. `add_module`
+#: refuses the rest rather than guessing, because a guessed range or cost is a
+#: module that is subtly wrong forever instead of a mount that fails loudly.
+MODULE_DEFAULTS = {
+    #                hp  range   eng  engregen  cost  special1..8
+    'NanoMatrix': dict(hp=50, range=200, eng=500, engregen=0.40, cost=0.10,
+                       special=(0.10, -1, -1, -1, -1, -1, -1, -1)),
+}
+
 #: Object name -> sprite file stem, where they differ. `Deflecctor` is
 #: misspelled in the game itself.
 TURRET_ALIAS = {

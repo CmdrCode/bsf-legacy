@@ -234,6 +234,99 @@ def test_name_survives_both_generations():
         ok(True, 'a comma in a name is refused')
 
 
+def test_sh3_agrees_with_its_sb4_twin():
+    """The same ship read from both generations must describe the same hull.
+
+    `Custom Ships/` ships Pendulum twice — `Pendulum.sb4` and the `Pendulum.shp`
+    exported from it — which is the only cross-generation pair in existence and
+    therefore the whole evidence base for the sh3 reader. Byte equality is not
+    the test and never can be: the export crosses a ShipMaker version, sh3 drops
+    two fields, and it reorders the sections. Geometry, structure and identity
+    are the test.
+    """
+    shp = PENDULUM.with_suffix('.shp')
+    if not shp.exists():
+        return
+    a, b = model.load(PENDULUM), model.load(shp)
+    ok(b.generation == 'sh3' and a.generation == 'sb4',
+       'the twin really is one file per generation', f'{a.generation}/{b.generation}')
+    ok(len(a.sections) == len(b.sections) == 8,
+       'both generations build the same section count',
+       f'{len(a.sections)} vs {len(b.sections)}')
+
+    # Keyed on placement, because the ids cannot match: sb4 numbers sections in
+    # creation order and sh3 identifies them by position in depth order.
+    def key(s):
+        return (round(s.x, 2), round(s.y, 2), s.name, s.xscale, s.yscale, s.angle)
+    ka, kb = {key(s): s for s in a.sections}, {key(s): s for s in b.sections}
+    ok(set(ka) == set(kb), 'every section appears in both, same place and pose',
+       f'only in sb4: {sorted(set(ka) - set(kb))}  only in sh3: {sorted(set(kb) - set(ka))}')
+
+    # Parenthood has to survive the renumbering: compare the relation itself,
+    # each end resolved back to a placement.
+    def links(sh, index):
+        out = set()
+        for s in sh.sections:
+            if s.parent > 0:
+                out.add((key(s), key(index[s.parent])))
+        return out
+    ia = {s.id: s for s in a.sections}
+    ib = {s.id: s for s in b.sections}
+    la, lb = links(a, ia), links(b, ib)
+    ok(la == lb, 'the parent relation survives the renumbering',
+       f'{len(la)} vs {len(lb)} links')
+
+    # sh3 has no depth field; the reader synthesises it from record order, and
+    # what matters is that the resulting *order* matches the .sb4's depths.
+    oa = [key(s) for s in sorted(a.sections, key=lambda s: -s.depth)]
+    obs = [key(s) for s in sorted(b.sections, key=lambda s: -s.depth)]
+    ok(oa == obs, 'draw order matches the sb4 depth ordering')
+
+    # Colour is the field sh3 stores differently rather than not at all: the
+    # .sb4 keeps a resolved image_blend, sh3 keeps the shade index behind it.
+    # Reading it as "no colour" rendered the whole hull black and looked
+    # plausible in the tree, so this is the assertion that would have caught it.
+    ca = {key(s): s.colour for s in a.sections}
+    cb = {key(s): s.colour for s in b.sections}
+    ok(ca == cb, 'every section resolves to the same team shade',
+       f'{sorted(set(ca.values()))} vs {sorted(set(cb.values()))}')
+    ok(len(set(cb.values())) > 1,
+       'the hull is not flattened to a single shade', str(set(cb.values())))
+
+    # Mounts: sh3 collapses weapons and modules into one nTur2 family, so the
+    # counts cannot match per-kind — placement can, and does.
+    ma = {(round(m.x, 2), round(m.y, 2), m.name) for m in a.mounts}
+    mb = {(round(m.x, 2), round(m.y, 2), m.name) for m in b.mounts}
+    ok(ma == mb, 'every mount appears in both, same place',
+       f'only in sb4: {sorted(ma - mb)}  only in sh3: {sorted(mb - ma)}')
+    ok({round(m.angle, 2) for m in a.mounts} == {round(m.angle, 2) for m in b.mounts},
+       'mount angles survive the generation change')
+
+
+def test_every_stock_custom_ship_reads():
+    """The eight designs shipped in `Custom Ships/` must all build.
+
+    They are the ships a mission may reference without shipping anything, so
+    "can the editor draw it" is a real question about them. Seven are byte-
+    shifted and were unreadable until decode; five are sh1 (Game Maker source),
+    two sh2 (call syntax), one sh3 (records) — three generations across eight
+    files, which is why this walks the folder rather than naming one.
+    """
+    folder = paths.GAME / 'Custom Ships'
+    if not folder.is_dir():
+        return
+    ships = sorted(folder.glob('*.shp'))
+    ok(len(ships) >= 8, 'the stock custom ships are present', str(len(ships)))
+    for p in ships:
+        sh = model.load(p)
+        ok(len(sh.sections) > 0, f'{p.stem} builds sections',
+           f'{sh.generation}: {len(sh.sections)}')
+        ok(all(s.sprite for s in sh.sections), f'{p.stem} names a sprite per section')
+        # A section whose colour collapsed to 0 renders black, which is how the
+        # sh3 shade index was missed the first time.
+        ok(all(s.colour > 0 for s in sh.sections), f'{p.stem} resolves team colours')
+
+
 def test_stock_ship_import():
     """sh1 declares attachment backwards; the importer has to invert it."""
     import stockship

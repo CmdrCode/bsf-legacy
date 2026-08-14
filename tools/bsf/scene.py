@@ -126,14 +126,19 @@ def build(ship: model.Ship, *, bridge: bool = True) -> dict:
     notes: list[str] = []
     missing: list[str] = []
 
-    cor = ship.core
-    core_index = int(cor.num(COR_INDEX)) if cor else 0
+    core_index = ship.core_shape
 
     # The core is a tinted 80x80 sprite at the origin, not just the bridge bead.
     # Its shape is chosen by image_index, but only one core frame exists on disk
     # -- the rest live in the encrypted gamedata -- so anything other than frame
     # 0 is drawn as frame 0 and flagged.
-    if cor is not None:
+    #
+    # Asking the ship rather than for an `nCor` record is what lets a `.shp`
+    # draw its core at all: only `.sb4` uses a record, and every other
+    # generation writes `sprite_index` as a plain setting. Reading just the
+    # record meant all 173 of them rendered coreless -- and the linter, seeing
+    # nothing at the origin, reported a hole and a floating bridge.
+    if ship.has_core:
         sp = sprites.get_exe('spr_core', core_index, mask=True)
         if sp is None:                       # no exe cache: fall back to disk
             dp = sprites.resolve('spr_Core')
@@ -147,11 +152,20 @@ def build(ship: model.Ship, *, bridge: bool = True) -> dict:
             missing.append('spr_core')
         else:
             p = sp.path
+            xs, ys = ship.core_scale
+            colour = ship.core_colour
+            # An unstated colour means the team's, so it is drawn in the same
+            # palette base a shade-0 section would take.
+            if colour is not None:
+                blend = _hex(sprites.gm_colour(colour))
+            else:
+                pal = sprites.teams().get('player') or [(0, 255, 0)]
+                blend = _hex(pal[0])
             ops.append(Op(
                 id=0, kind='core', spr=str(p), name='spr_core',
                 x=0.0, y=0.0,
-                xs=cor.num(COR_XS, 1.0), ys=cor.num(COR_YS, 1.0), ang=0.0,
-                blend=_hex(sprites.gm_colour(cor.num(COR_COLOUR))),
+                xs=xs, ys=ys, ang=0.0,
+                blend=blend,
                 alpha=1.0, mode='normal', layer=LAYER_CORE, z=99999.0,
                 ox=sp.ox, oy=sp.oy, w=sp.w, h=sp.h, mask=True,
                 parent=None, mirror=None, glow=False, frame=core_index,

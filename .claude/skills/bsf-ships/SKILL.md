@@ -82,6 +82,59 @@ follows `bsf-capture`'s posture rather than `bsf-storytelling`'s.
 19. **Don't pin tests to mutable assets.** A gate that asserts facts about a
     ship someone may legitimately improve will fail for the wrong reason.
 
+### Loading a design in the actual game
+
+19a. **`ship check` passing is not evidence the game can load it.** Everything
+    above is offline: it reads geometry, not what the engine makes of it. The
+    first in-game load of `station_bolthole.shp` produced **14 turrets with
+    `rs_owner = noone`**, each dereferencing `rs_owner.image_angle` every step —
+    a measured **203 KB/s** of `game_errors.log` from one hull, against 0 B/s
+    for the same scene without it and 0 B/s for four stock hulls. Nothing
+    offline had flagged it. When a design is first instantiated, spawn it alone
+    in a running game and watch the error log grow; the ownerless-mount count is
+    `with (ctr_ITurrets) if (rs_owner < 100000) …`, since instance ids start at
+    100000 and `noone` is -4.
+
+19c. **A module is not a weapon, and filing one as a weapon costs the whole
+    ship.** The loader's `nWep2a` handler reads `l_weapon[wj].l_bullet`; a
+    module has no such variable, the read throws, and because this runs inside
+    the ship object's *Create* event the throw abandons the rest of it — every
+    later mount, `l_weaponnum=wj-1`, `initWeapons` and `initOwners`. The hull
+    arrives with `l_weaponnum = 0` and every turret still holding the default
+    `rs_owner = -4`. That was the whole of the 203 KB/s above: **one** misfiled
+    NanoMatrix among 33 mounts. Measured: `l_bullet` exists on Blaster,
+    PointMaser, ParticleGun, PlasmaBall and Railgun, and not on NanoMatrix or
+    ThrusterEx. `sprites.MODULES` is the list, `ship check` reports it as
+    `unloadable`, `ship arm` routes by object, and `ship export` refuses — but
+    the underlying rule is the one to remember, because a `.sb4` can be authored
+    this way by anything.
+
+19b. **`importShip` does not place a ship.** It parses the design into a fresh
+    object parented to `ctr_Ship`, hands that object to a `ctr_Spawner`, and the
+    spawner waits for a *mouse click* — the x/y arguments do not place it.
+    Measured: after `importShip` returned, `instance_number` of the new object
+    was 0. Anything scripted must take `ctr_Spawner.l_owner` and
+    `instance_create` the hull itself. Read the object off the cursor rather
+    than out of `global.l_fnames`, whose key is the path plus a per-team suffix
+    (`"allied"`, `"player"`). And destroy any stranded cursor first: parse
+    refuses outright while one exists (`if instance_exists(ctr_Spawner) then
+    return -4`), so one crash inside the spawner silently blocks every later
+    import in the room.
+
+19d. **The loader caches every design by path, for the life of the process** —
+    `global.l_fnames` holds `<path>` + a team suffix, `global.l_objects` the
+    object it built. Two consequences, both of which cost a debugging session.
+    *Editing a `.shp` and re-applying does not pick it up:* the second import
+    returns the stale object, so a design change needs the game restarted, or
+    the cache torn down the way the main menu does it —
+    `for (i=0; i<ds_list_size(global.l_fnames); i+=1) object_delete(
+    global.l_objects[i]); ds_list_clear(global.l_fnames)`. *And a cache hit
+    arms no `ctr_Spawner`*, so scripted placement must use importShip's **return
+    value** (the object index, or -4 on failure) rather than reading
+    `ctr_Spawner.l_owner` — the cursor is there only on the first import of a
+    file, which makes cursor-reading code work exactly once per session and
+    silently drop the hull on every replay.
+
 ### The two things that are not in git
 
 20. **The `.sb4` is source; the game loads the `.shp`.** Sections there are

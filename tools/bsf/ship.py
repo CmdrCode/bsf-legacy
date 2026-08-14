@@ -31,10 +31,12 @@ import pathlib
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import export    # noqa: E402
 import history   # noqa: E402
 import model     # noqa: E402
 import render    # noqa: E402
 import scene     # noqa: E402
+import sprites   # noqa: E402
 
 
 # --------------------------------------------------------------------------
@@ -290,9 +292,20 @@ def do_structural(ship: model.Ship, edits, args,
 
     if args.cmd == 'arm':
         x, y = parse_pair(args.at)
-        wid, notes = edits.add_weapon(ship, args.weapon, x, y,
-                                      parent=args.parent, angle=args.angle,
-                                      arc=args.arc, mirror=args.mirror)
+        # Routed by object, not by a flag. A module and a weapon are the same
+        # gesture to whoever is building the ship -- bolt this to that section --
+        # and picking the wrong table does not cost you the mount, it costs you
+        # every weapon on the ship when the game loads it.
+        if args.weapon in sprites.MODULES:
+            wid, notes = edits.add_module(ship, args.weapon, x, y,
+                                          parent=args.parent, angle=args.angle,
+                                          mirror=args.mirror)
+            if args.arc is not None:
+                notes.append('--arc ignored: a module has no firing arc')
+        else:
+            wid, notes = edits.add_weapon(ship, args.weapon, x, y,
+                                          parent=args.parent, angle=args.angle,
+                                          arc=args.arc, mirror=args.mirror)
         return [f'  {n}' for n in notes], f'arm {args.weapon} at {x:+g},{y:+g}'
 
     if args.cmd == 'mirror':
@@ -619,6 +632,12 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument('rev')
     with_file(sub.add_parser('undo', help='restore the previous version'))
 
+    p = with_file(sub.add_parser(
+        'export', help='write the .shp the game loads, from a .sb4'))
+    p.add_argument('-o', '--out', help='destination (default: alongside, .shp)')
+    p.add_argument('--size', type=float,
+                   help="override l_size instead of measuring the hull")
+
     p = with_file(sub.add_parser('serve', help='live preview in a browser'))
     p.add_argument('--port', type=int, default=8771)
     p.add_argument('--bind', default='127.0.0.1')
@@ -635,6 +654,22 @@ def main(argv: list[str] | None = None) -> int:
     # -- read-only ---------------------------------------------------------
     if args.cmd == 'tree':
         print_tree(model.load(path), args.json)
+        return 0
+
+    if args.cmd == 'export':
+        ship = model.load(path)
+        notes: list[str] = []
+        try:
+            text = export.sb4_to_sh3(ship, size=args.size, warn=notes.append)
+        except export.ExportError as e:
+            print(f'cannot export: {e}', file=sys.stderr)
+            return 2
+        out = pathlib.Path(args.out) if args.out else path.with_suffix('.shp')
+        out.write_bytes(model.encode(text, obfuscated=False))
+        print(f'{ship.name}  {len(ship.sections)} sections, '
+              f'{len(ship.mounts)} mounts  -> {out}')
+        for n in notes:
+            print(f'  note: {n}')
         return 0
 
     if args.cmd == 'render':

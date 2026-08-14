@@ -85,11 +85,116 @@ def check_strict(path: pathlib.Path) -> list[str]:
     return bad
 
 
+#: The `.shp` lines ShipMaker's *current* writer cannot produce, which a
+#: reference file written by an older one still carries. Each is inert:
+#:
+#: * `//sh3 ver1` -- Pendulum predates the `ver2` tag `saveShipSHP` now writes.
+#: * `nTrigS,i,9,0,0` / `nTrigW,i,9,0,0` -- these set `tr_toggle = 1` on a part
+#:   whose four trigger types are all zero, and the game's own `nSecT`/`nWepT`
+#:   handlers already set exactly that for exactly those parts. Today's
+#:   `tr_checkToggle` gates on a non-zero type, so it cannot emit them at all.
+EXPORT_ALLOWED = ('//sh3 ver', 'nTrigS,', 'nTrigW,')
+
+
+#: Where to look for a design that exists in *both* generations.
+#:
+#: Deliberately the game's own ship folder and nothing else. Any `.sb4` beside
+#: its own `.shp` is a valid oracle only if something other than this writer
+#: produced the `.shp` -- and `ship export` writes exactly that pairing into
+#: `mods/ships/`. Widening this to every root would quietly start grading the
+#: writer against its own output, which passes by construction and proves
+#: nothing. Stock ships are the author's and ShipMaker's; ours are not.
+ORACLE_ROOT = ['Custom Ships']
+
+
+def oracle_pairs() -> list[tuple[pathlib.Path, pathlib.Path]]:
+    out = []
+    for sub in ORACLE_ROOT:
+        for src in sorted((paths.GAME / sub).glob('*.sb4')):
+            ref = src.with_suffix('.shp')
+            if ref.exists():
+                out.append((src, ref))
+    return out
+
+
+def check_export_semantic(src: pathlib.Path) -> list[str]:
+    """Export a `.sb4`, read the result back, and compare what it describes.
+
+    Needs no reference file, so it runs on *every* `.sb4` there is rather than
+    only the ones that happen to ship beside a `.shp`. What it proves is
+    narrower, though, and the two checks are not substitutes: this one would
+    still pass if the writer and the reader shared a wrong idea of the format,
+    because it never leaves our own code. `check_export` is the only thing that
+    can catch that, and it is why a real ShipMaker-written pair is worth having.
+    """
+    import export
+
+    a = model.load(src)
+    text = export.sb4_to_sh3(a)
+    tmp = src.with_suffix('.shp')
+    b = model.Ship(tmp, text, False)
+
+    def parts(ship, items):
+        return sorted((round(p.x, 2), round(p.y, 2), round(p.angle, 2),
+                       round(p.xscale, 2), round(p.yscale, 2),
+                       p.sprite.strip('"').replace('\\', '/').split('/')[-1])
+                      for p in items)
+
+    bad = []
+    if parts(a, a.sections) != parts(b, b.sections):
+        bad.append(f'{len(a.sections)} sections in, {len(b.sections)} out, '
+                   'and their geometry differs')
+    if parts(a, a.mounts) != parts(b, b.mounts):
+        bad.append(f'{len(a.mounts)} mounts in, {len(b.mounts)} out, '
+                   'and their geometry differs')
+    # A parent is an id in one generation and a slot in the other, so the
+    # numbers must differ; what has to hold is that they name the same part.
+    where_a = {s.id: (round(s.x, 2), round(s.y, 2)) for s in a.sections}
+    where_b = {s.id: (round(s.x, 2), round(s.y, 2)) for s in b.sections}
+    for ma, mb in zip(a.mounts, b.mounts):
+        if where_a.get(ma.parent) != where_b.get(mb.parent):
+            bad.append(f'mount on section {ma.parent} re-hung elsewhere')
+            break
+    return bad
+
+
+def check_export() -> tuple[bool, list[str]]:
+    """Re-export every design that exists in both generations, and compare.
+
+    This is the only check on the writer that does not depend on believing the
+    writer. Differences are reported unless they are on the allow-list above,
+    which is what keeps it a regression gate rather than a diff.
+    """
+    import export
+
+    pairs = oracle_pairs()
+    if not pairs:
+        return True, ['skipped: no .sb4 shipped beside its own .shp']
+
+    notes: list[str] = []
+    ok = True
+    for src, ref in pairs:
+        got = export.sb4_to_sh3(model.load(src)).split('\r\n')
+        want = model.decode(ref.read_bytes())[0].split('\r\n')
+        diff = [f'-{line}' for line in want if line not in got]
+        diff += [f'+{line}' for line in got if line not in want]
+        unexplained = [d for d in diff
+                       if not any(d[1:].startswith(p) for p in EXPORT_ALLOWED)]
+        if unexplained:
+            ok = False
+            notes += [f'{src.stem}: {d}' for d in unexplained]
+        else:
+            notes += [f'{src.stem}: {d}' for d in diff]
+    return ok, notes
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('paths', nargs='*', help='ship files (default: every unique one on disk)')
     ap.add_argument('--strict', action='store_true', help='also measure gmstr() fidelity')
+    ap.add_argument('--export', action='store_true',
+                    help='also check the sb4 -> sh3 writer against ShipMaker')
     ap.add_argument('-v', '--verbose', action='store_true')
     args = ap.parse_args()
 
@@ -151,7 +256,36 @@ def main() -> int:
             for key in sorted(mismatched, key=lambda k: -mismatched[k]):
                 print(f'  ⚠ {mismatched[key]:>5}×  {examples[key]}')
 
-    return 1 if failures else 0
+    export_ok = True
+    if args.export:
+        print('\nsb4 -> sh3 writer')
+
+        # Every .sb4 there is: does the exported file still describe the ship?
+        sources = [p for p in files if model.load(p).generation == 'sb4']
+        sem_bad: list[str] = []
+        for src in sources:
+            sem_bad += [f'{src.name}: {b}' for b in check_export_semantic(src)]
+        for b in sem_bad:
+            print(f'  ✗ {b}')
+        if not sem_bad:
+            print(f'  ✓ re-read: {len(sources)} design(s) come back with the '
+                  'same parts in the same places')
+
+        # The matched pairs: is it the file ShipMaker would have written?
+        pairs = oracle_pairs()
+        export_ok, notes = check_export()
+        if export_ok:
+            print('  ✓ vs ShipMaker: %s — every line its current writer would '
+                  'produce' % (', '.join(p[0].stem for p in pairs) or 'no pairs'))
+            if args.verbose:
+                for n in notes:
+                    print(f'    (allowed) {n}')
+        else:
+            for n in notes:
+                print(f'  ✗ {n}')
+        export_ok = export_ok and not sem_bad
+
+    return 1 if failures or not export_ok else 0
 
 
 if __name__ == '__main__':

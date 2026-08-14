@@ -340,8 +340,12 @@ if [ ! -f "$WINEPREFIX/.bsf-no-xrandr" ]; then
     fi
 fi
 
+# Arguments are forwarded, so the game can be launched into something other
+# than the main menu -- `./@STEM@_Linux.sh mission_editor 1` reaches the mods
+# through parameter_string, the same way ctr_Testroom already opens a .shp from
+# argv. With no arguments this is exactly the plain launch it always was.
 LOG="$WINEPREFIX/@STEM@.log"
-wine "$EXE" >"$LOG" 2>&1
+wine "$EXE" "$@" >"$LOG" 2>&1
 STATUS=$?
 if [ "$STATUS" -ne 0 ]; then
     if grep -qiE "bad exe format|32-bit" "$LOG" 2>/dev/null; then

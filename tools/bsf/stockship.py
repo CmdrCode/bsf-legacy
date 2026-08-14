@@ -57,96 +57,18 @@ DAMAGE_TINT = gm_rgb(214, 84, 52)
 #: shape rather than their own -- visible only if you know to look for it.
 CORE_SPRITE = 'Stock Misc\\spr_Core.gif'
 
-CREATE = re.compile(
-    r'l_(section|weapon)\[(?P<idx>[^\]]+)\]\s*=\s*instance_create\('
-    r'\s*(?P<x>-?[\d.]+)\s*,\s*(?P<y>-?[\d.]+)\s*,\s*(?P<obj>[A-Za-z_]\w*)\s*\)')
-#: `l_section[j].l_child[l_section[j].l_childnum] = l_section[j-1]` -- note the
-#: subscript inside the subscript, so the inner group has to be lazy and let
-#: backtracking find the `] =` that actually closes it.
-CHILD = re.compile(
-    r'l_section\[(?P<par>[^\]]+)\]\.l_child\[.*?\]\s*=\s*'
-    r'l_(?P<kind>section|weapon)\[(?P<kid>[^\]]+)\]')
-ATTR = re.compile(r'l_(section|weapon)\[[^\]]+\]\.(?P<k>\w+)\s*=\s*(?P<v>-?[\d.]+)')
-
-
-def _idx(expr: str, j: int) -> int | None:
-    """Resolve `j`, `j-2`, or a bare number against the current counter."""
-    expr = expr.strip()
-    if expr == 'j':
-        return j
-    m = re.fullmatch(r'j\s*-\s*(\d+)', expr)
-    if m:
-        return j - int(m.group(1))
-    return int(expr) if expr.isdigit() else None
-
-
 def read(name: str) -> dict:
-    """Parse a stock ship's Game Maker source into sections and weapons."""
+    """Parse a stock ship's Game Maker source into sections and weapons.
+
+    The parsing itself lives in `model.parse_gml`: sh1 is a ship file format
+    like any other, the model reads `.shp` files written in it, and two copies
+    of a regex that has to know `l_child` runs backwards is one too many.
+    """
     f = next(GML.glob(f'{name}.player.gml'), None) or next(GML.glob(f'{name}.*.gml'), None)
     if f is None:
         raise FileNotFoundError(f'no source for ship {name!r} under {GML}')
     text, _ = model.decode(f.read_bytes())
-
-    secs: dict[int, dict] = {}
-    weps: dict[int, dict] = {}
-    parent: dict[int, int] = {}          # section idx -> section idx
-    wparent: dict[int, int] = {}         # weapon idx  -> section idx
-    j = 0
-    cur = None                           # ('section'|'weapon', idx)
-
-    for line in text.splitlines():
-        s = line.strip()
-        if re.fullmatch(r'j\s*=\s*0', s):
-            j = 0
-            continue
-        if re.fullmatch(r'j\s*\+=\s*1', s):
-            j += 1
-            continue
-
-        m = CREATE.search(s)
-        if m:
-            i = _idx(m.group('idx'), j)
-            if i is None:
-                continue
-            rec = {'x': float(m.group('x')), 'y': float(m.group('y')),
-                   'obj': m.group('obj'), 'xs': 1.0, 'ys': 1.0, 'ang': 0.0}
-            if m.group(1) == 'section':
-                secs[i] = rec
-                cur = ('section', i)
-            else:
-                weps[i] = rec
-                cur = ('weapon', i)
-            continue
-
-        m = CHILD.search(s)
-        if m:
-            par = _idx(m.group('par'), j)
-            kid = _idx(m.group('kid'), j)
-            if par is not None and kid is not None:
-                (wparent if m.group('kind') == 'weapon' else parent)[kid] = par
-            continue
-
-        if cur is None:
-            continue
-        m = re.search(r'sprite_index\s*=\s*([A-Za-z_]\w*)', s)
-        if m and cur[0] == 'section':
-            secs[cur[1]]['obj'] = m.group(1)
-            continue
-        m = ATTR.search(s)
-        if m:
-            bag = secs if cur[0] == 'section' else weps
-            k, v = m.group('k'), float(m.group('v'))
-            if k == 'image_xscale':
-                bag[cur[1]]['xs'] = v
-            elif k == 'image_yscale':
-                bag[cur[1]]['ys'] = v
-            elif k in ('l_angle', 'image_angle'):
-                bag[cur[1]]['ang'] = v
-            elif k == 'l_arcrange':
-                bag[cur[1]]['arc'] = v
-
-    return {'sections': secs, 'weapons': weps,
-            'parent': parent, 'wparent': wparent}
+    return model.parse_gml(text)
 
 
 def _weapon_template() -> dict[str, list[str]]:

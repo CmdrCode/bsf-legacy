@@ -9,7 +9,7 @@ has to chew through before the hull takes a scratch. An earlier draft of this
 tool offered `remove --where 'occluded > 0.99'` as a cleanup; that would strip a
 ship's armour, and it is withdrawn.
 
-So `check` has an opinion about exactly five things, all of which are mistakes
+So `check` has an opinion about exactly six things, all of which are mistakes
 rather than choices:
 
     duplicate    two parts at the same place with the same art and transform
@@ -18,6 +18,16 @@ rather than choices:
     mirror       a pair that does not reflect, with the exact deviation
     dangling     a tier-2 record naming a part that is not there
     missing      a sprite that does not resolve
+    unloadable   a record the game's own loader will refuse
+
+`unloadable` is the odd one out and the reason this list grew. Everything above
+it is judged by looking at geometry, and geometry is exactly what a hull that
+the game refuses to load can have perfectly right: `station_bolthole` passed
+every check here and still arrived in-game with no weapons at all, because one
+record killed the ship's Create event on the way in. Offline agreement with the
+file is not agreement with the engine, so a rule only earns a place under
+`unloadable` once the failure has been *seen in a running game* -- see
+`.claude/skills/bsf-ships/SKILL.md` §19a for how to look.
 
 **A baseline, not a tolerance** (D20). There is no natural cutoff for mirror
 drift: measured on a real hull, every angle is exactly right and every
@@ -38,6 +48,7 @@ import edits      # noqa: E402
 import history    # noqa: E402
 import model      # noqa: E402
 import scene      # noqa: E402
+import sprites    # noqa: E402
 
 #: Below this, an enclosed pocket is an artefact of two plates not quite meeting
 #: rather than a gap anyone would see. Four pixels is two-by-two at 1:1.
@@ -94,6 +105,39 @@ def duplicates(ship: model.Ship) -> list[Finding]:
         if len(who) > 1:
             out.append(Finding('duplicate', ', '.join(who),
                                f'{k[1]} at {k[2]:+g},{k[3]:+g}'))
+    return out
+
+
+def unloadable(ship: model.Ship) -> list[Finding]:
+    """Records the game's `.shp` loader refuses. Measured in a running game.
+
+    **A module filed as a weapon.** The game's `nWep2a` handler reaches into the
+    mount it has just built and reads `l_weapon[wj].l_bullet`; a module has no
+    such variable, so the read throws. That would be survivable if it cost the
+    one mount, but it happens inside the ship object's *Create* event, and a
+    throw abandons the whole event: every later mount, `l_weaponnum=wj-1`,
+    `initWeapons` and `initOwners` all never run. The hull arrives with
+    `l_weaponnum` still 0 and every turret still holding `rs_owner = -4`, each
+    dereferencing it once per step -- 203 KB/s into `game_errors.log`, measured,
+    from one misfiled mount on `station_bolthole`.
+
+    Nothing offline sees this. The geometry is right, the file round-trips, and
+    ShipMaker's own reader is perfectly happy; only the game objects. What makes
+    it checkable is that the distinction is a property of the *object*, not of
+    the record it happens to sit in -- `sprites.MODULES` already had the list,
+    for drawing the blue glow.
+
+    Asked of `ship.weapons` rather than of `nWepA`, so it reads a `.shp` (where
+    the same mistake is an `nWep2a` after the `nTur2`) as well as its `.sb4`.
+    """
+    out = []
+    for w in ship.weapons:
+        if w.sprite in sprites.MODULES:
+            out.append(Finding(
+                'unloadable', f'weapon {w.id}',
+                f'{w.sprite} is a module, and the loader reads l_bullet off '
+                f'every weapon mount -- file it as a module, or the ship loads '
+                f'with no weapons at all'))
     return out
 
 
@@ -201,6 +245,7 @@ def run(ship: model.Ship) -> tuple[list[Finding], object]:
     out += duplicates(ship)
     pix, an = pixel_findings(ship, sc)
     out += pix
+    out += unloadable(ship)
     out += mirror_pairs(ship)
     out += lone_offcentre(ship)
     out += [Finding('dangling', d, '') for d in edits.dangling(ship)]

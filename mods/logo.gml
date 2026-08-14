@@ -135,7 +135,7 @@ if (surface_exists(sa) && surface_exists(sb) && surface_exists(sc)) {
     draw_set_blend_mode_ext(bm_one, bm_one);
     for (k = -R; k <= R; k += 1) {
         i = round(wt[k + R] * 255);
-        if (i > 0) draw_surface_ext(sa, k, 0, 1, 1, 0, make_colour_rgb(i, i, i), 1);
+        if (i > 0) draw_surface_ext(sa, k, 0, 1, 1, 0, make_color_rgb(i, i, i), 1);
     }
     draw_set_blend_mode(bm_normal);
     surface_reset_target();
@@ -146,7 +146,7 @@ if (surface_exists(sa) && surface_exists(sb) && surface_exists(sc)) {
     draw_set_blend_mode_ext(bm_one, bm_one);
     for (k = -R; k <= R; k += 1) {
         i = round(wt[k + R] * 255);
-        if (i > 0) draw_surface_ext(sb, 0, k, 1, 1, 0, make_colour_rgb(i, i, i), 1);
+        if (i > 0) draw_surface_ext(sb, 0, k, 1, 1, 0, make_color_rgb(i, i, i), 1);
     }
     draw_set_blend_mode(bm_normal);
     surface_reset_target();
@@ -174,7 +174,7 @@ object_event_add(GUI_MainTitle, 8, 0,
     'if (ok) {' +
     ' draw_set_blend_mode_ext(bm_one, bm_one);' +
     ' draw_surface_ext(global.logo_surf, global.logo_bx, global.logo_by, 1, 1, 0,' +
-    '  make_colour_rgb(global.logo_glow, global.logo_glow, global.logo_glow), 1);' +
+    '  make_color_rgb(global.logo_glow, global.logo_glow, global.logo_glow), 1);' +
     ' draw_set_blend_mode(bm_normal);' +
     '} else {' +
     // No surface: additive ring taps. Never touches the render target.

@@ -372,9 +372,22 @@ def add_weapon(ship: model.Ship, obj: str, x: float, y: float, *,
     """Mount a weapon at a core-relative position. Returns (wepid, notes).
 
     `obj` is the game's own object name -- `PointMaser`, `Blaster`,
-    `ParticleGun`, `NanoMatrix` -- which is what `nWepA[3]` stores and what the
-    sprite resolver already knows how to find.
+    `ParticleGun` -- which is what `nWepA[3]` stores and what the sprite
+    resolver already knows how to find.
+
+    A **module** is not one of those, however much it looks like a turret on the
+    hull, and this function used to take one without complaint: an earlier
+    version of this docstring offered `NanoMatrix` as an example, which is
+    exactly how `station_bolthole` acquired a module in its weapon table and
+    shipped a `.shp` that loaded with no weapons at all. Modules go through
+    `add_module`, and `ship arm` routes by object so the caller does not have to
+    know which is which.
     """
+    if obj in sprites.MODULES:
+        raise EditError(
+            f'{obj} is a module, not a weapon -- the game reads l_bullet off '
+            f'every weapon mount and a module has none, which kills the whole '
+            f'ship on load. Use add_module (ship arm does this for you).')
     sp, _path, _note = sprites.best(obj, mask=False, pivot=True)
     if sp is None:
         raise EditError(f'no sprite resolves to weapon {obj!r}')
@@ -433,6 +446,71 @@ def add_weapon(ship: model.Ship, obj: str, x: float, y: float, *,
         _pair(ship, 'weapon', wid, twin)
         notes.append(f'mirrored as {twin} at {x:+g},{-y:+g}')
     return wid, notes
+
+
+def add_module(ship: model.Ship, obj: str, x: float, y: float, *,
+               parent: int = 0, angle: float = 0.0,
+               mirror: bool = False) -> tuple[int, list[str]]:
+    """Mount a module at a core-relative position. Returns (modid, notes).
+
+    The counterpart to `add_weapon`, and the reason it exists is that the two
+    are not interchangeable to the game even though they are both "a thing bolted
+    to a section": the loader reads `l_bullet` off every *weapon* mount, a module
+    has none, and the read throws inside the ship's Create event and abandons
+    everything after it. A module in the weapon table therefore does not cost
+    you a module -- it costs you every weapon on the ship.
+
+    Unlike a weapon, this does not clone a donor. `nModA`/`nModB` are understood
+    field by field (they are in the reference table), and the values that matter
+    are the object's own -- so they come from `sprites.MODULE_DEFAULTS`, which
+    was read out of a running game. A module with no measured entry is refused
+    rather than written with zeros.
+    """
+    if obj not in sprites.MODULES:
+        raise EditError(f'{obj} is not a module -- use add_weapon')
+    sp, _path, _note = sprites.best(obj, mask=False, pivot=True)
+    if sp is None:
+        raise EditError(f'no sprite resolves to module {obj!r}')
+    if parent and ship.section(parent) is None:
+        raise EditError(f'no section {parent} to mount on')
+    d = sprites.MODULE_DEFAULTS.get(obj)
+    if d is None:
+        raise EditError(
+            f'no measured defaults for module {obj!r}. Read them off a running '
+            f'game (see the bsf-ships skill, "Loading a design in the actual '
+            f'game") and add them to sprites.MODULE_DEFAULTS -- guessing them '
+            f'mounts a module that is quietly wrong instead of one that fails.')
+
+    notes: list[str] = []
+    mid = next_mount_id(ship, 'module')
+    after = _last_record(ship, ('nModC', 'nModB', 'nModA',
+                                'nWepTr', 'nWepD', 'nWepC', 'nWepB', 'nWepA'))
+
+    def records(mno: int, yy: float, ang: float, host: int) -> None:
+        nonlocal after
+        a = [str(mno), model.gmstr(ship.core_x + x), model.gmstr(ship.core_y + yy),
+             obj, '1', '1', model.gmstr(ang), '0', '0', '-1',
+             model.gmstr(d['hp']), model.gmstr(d['range']), '0',
+             model.gmstr(d['eng']), model.gmstr(d['engregen']),
+             model.gmstr(d['cost'])]
+        after = ship.add_record('nModA', a, after)
+        b = ([str(mno), str(host)]
+             + [model.gmstr(v) for v in d['special']] + ['1', '0'])
+        after = ship.add_record('nModB', b, after)
+        after = ship.add_record('nModC', [str(mno), '0'], after)
+
+    records(mid, y, angle, parent)
+    notes.append(f'{obj} {mid} at {x:+g},{y:+g} on '
+                 f'{"the core" if not parent else f"section {parent}"}')
+
+    if mirror and abs(y) >= 1:
+        twin = next_mount_id(ship, 'module')     # the first record is already in
+        pm = ship.mirrors.get(parent, model.UNMIRRORED)
+        host = pm if pm >= 0 else parent
+        records(twin, -y, -angle, host)
+        _pair(ship, 'module', mid, twin)
+        notes.append(f'mirrored as {twin} at {x:+g},{-y:+g}')
+    return mid, notes
 
 
 def find_mount(ship: model.Ship, kind: str, mid: int) -> model.Mount | None:

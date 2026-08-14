@@ -91,6 +91,80 @@ events, no `&&` short-circuit, no string escapes, `var` before `with`.
 - Dialogue strings live as `global.a2m1_t<N>` assignments in the generated
   file (double-quoted plain source, apostrophes legal); event-code strings
   are single-quoted and reference the globals — no quote nesting anywhere.
+- `spawn:` entries may carry a look — `sprite`, `scale`, `angle`, `frame`,
+  `tint` — emitted as assignments *after* `instance_create`, so they land after
+  the object's own Create event and replace what it chose. The instance is
+  caught in the mission's global when the entry is `name`d and in the scratch
+  `var s` otherwise; the ladder, the seek ladder and the start code all declare
+  it. `tint` is authored as `#rrggbb` or a colour word and compiles to
+  `make_color_rgb`, because `image_blend` literals are BGR and unreadable.
+  Sprite overrides are for sprite-drawn objects (`ter_*`, obstacles): a designed
+  ship draws its sections and ignores `sprite_index`.
+- A `spawn:` entry may name a ship **design** instead of an object:
+  `{ship: mods/ships/station_bolthole.shp, team: ally, hold: true, x: …, y: …}`.
+  It compiles to `importShip(path, team, x, y)` — the game's own loader, and what
+  the sandbox's spawn-ship uses — so the hull is built by the code that owns the
+  format. The path is relative to the game directory and is the string the loader
+  receives. Two roots are legal: `mods/ships/` (ours, installed with the mods)
+  and `Custom Ships/` (the eight in the stock zip, present on every install).
+  ⚠ The path is emitted **double-quoted**: event code is single-quoted GM, and an
+  apostrophe inside it has no escape.
+  `team:` maps to importShip's second argument — 0 player, 1 enemy, 2 ally, read
+  off the sandbox call sites (only `1` is confirmed by a comment, `//SPAWN ENEMY
+  SHHIP`) — and is **required**, because a hull on the wrong side looks right
+  until it opens fire. `hold:` zeroes `l_thrust`, `l_maxspeed` and `l_turning`
+  after the import: a ship file carries its own movement properties and the
+  campaign station's are non-zero, so imported as-is it drifts and turns under
+  AI. The stock stations solve this in their own GML instead (`Leviathan` is
+  `l_thrust=0, l_maxspeed=0.01`).
+- `room:` (width/height/caption) is emitted as `room_set_*` in the **re-bound**
+  half of the file, not the define-once half, so editing the room size is a
+  reload like any other edit. It lands on re-entry rather than immediately:
+  `room_set_width` writes the room *resource*, and the running room copied its
+  dimensions at room start. The editor's apply always re-enters (`force`), so
+  in practice a resize is visible as soon as it is applied. The view is
+  deliberately not re-asserted — `mods/resolution.gml` owns it.
+
+## The storm (`storm:` in the mission YAML)
+
+A storm is **one painted mask over the room**, not a list of circles: `.`
+clear, `#` damaging, `@` hot, one character per `cell` world units. It is the
+only description of the storm anywhere — the gas clouds you can see are
+scattered over the same cells that take your HP, so there is no way for the
+danger and the picture to disagree. `tools/editor` paints it.
+
+- The mask rows are emitted as `global.<id>_mrow[N]` and **decoded once per
+  load, in plain file scope**, into a flat `global.<id>_g[]` array. That makes
+  the damage test inside `with (ShipSection)` a single array read — cheaper
+  than the five `point_distance` calls the circles cost, at any shape.
+- Row runs (`_spx/_spy/_spw`) are derived the same way. Nothing draws them;
+  they are the table a lightning strike samples its two endpoints from, so one
+  uniform pick lands anywhere in the storm by area.
+- Two generated objects: a **storm** singleton (Create scatters the clouds,
+  Step does the damage and counts the bolt/flash frames down, Alarm 0 sites a
+  strike, Draw lights the clouds during one) and a **cloud puff**, which is
+  `spr_Nebula` tinted red — the palette mask, so `image_blend` is the whole
+  effect — animated with `ter_Nebula`'s own 9-frame alarm plus a slow curl that
+  orbits each puff around its home instead of letting the cloud drift off the
+  cells it is marking.
+- Boundary cells get a puff at p=0.5 regardless of `density`, which is what
+  keeps a painted edge legible without drawing an outline.
+- `zones:` (the older `{x, y, r, dmg}` circles) still parses and is rasterised
+  into the same mask at build time. The editor only ever writes a mask.
+
+## Interference (`interference: on|off` on a beat)
+
+Stock `ctr_Mission3`'s Draw event, lifted into a verb: while it is on, every
+`ter_Nebula` is redrawn additively with `image_alpha + random(0.4)` and every
+`ShipSection` leaves a randomly-scaled half-alpha echo near its previous
+position. `l_emp = 0.4` in the stock mission is dead — nothing ever reads it —
+so the "jump systems are down" is fiction and the distortion is the whole of
+what the effect actually was.
+
+Emitted into the controller's **Draw (`8:0`)**, with the controller's depth set
+to `-9` to match `ctr_Mission3`. The lightning bolt is drawn from there too:
+the storm object sits at depth 700 so a bolt drawn there is a line glimpsed
+*through* the gas rather than a discharge inside it.
 
 ## Dev install facts
 

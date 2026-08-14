@@ -241,6 +241,97 @@ Four generations, all readable by the corpus miner:
 `.sb4` has two versions; ver2 adds a trailing comma to `nSecTr`. Token-preserving
 storage handles it — do not special-case it.
 
+**All four generations now build sections and mounts**, not just `.sb4`. Before
+that, `ship tree` on any `.shp` reported 0 sections while round-tripping the file
+byte-exact, which reads as "the ship is empty" rather than "this reader does not
+model it". The mapping below was recovered by aligning `Custom Ships/Pendulum.sb4`
+against its own export `Pendulum.shp` — the same eight sections in both
+generations, and the only cross-generation pair that exists.
+
+### sh3 (`nSec2a`) — what it drops, and where it hid it
+
+    nSec2a,x,y,"sprite",image_xscale,image_yscale,image_angle,l_hp,blend,alpha,shade
+
+* **No section id.** A section is its position in the file, and `nPar2` refers to
+  sections that way. The model exposes 1-based ids so `0` still means the core.
+* **No depth field — depth is record order**, strictly descending. Pendulum's
+  eight `nSec2a` records carry the `.sb4`'s depths 8,7,6,5,4,3,2,1 in exactly
+  that order, which is also why the two files list sections differently.
+* **No resolved colour — the last token is the team shade index.** `.sb4` stores
+  `image_blend` already resolved; sh3 stores 0/1/2 into the team's palette,
+  because the colour is not the ship's to choose — the game tints by the team it
+  spawns into, which is why `importShip` takes one. Across Pendulum's sections
+  the indices 2,2,0,0,1,1,0,0 line up exactly with (128,255,128), (0,255,0) and
+  (64,255,64), the player palette in order. Reading this token as "no colour"
+  renders the whole hull **black** and looks entirely plausible in `ship tree`.
+* **Parents live in `nPar2,<parent>,<child>`**, both 0-based record indices, and
+  the argument order is the reverse of everything else in the format. Pendulum's
+  four records (6,2) (7,3) (6,4) (7,5) reproduce the `.sb4`'s 5→3, 6→3, 7→4, 8→4.
+* **Weapons and modules share one family**, `nTur2,x,y,sprite,angle,…,parent`.
+  Pendulum's four records are its three weapons *and* its ThrusterEx. No scale is
+  recorded; every mount in the twin is 1.
+
+### sh2 — sh3's structure in call syntax
+
+`nSec(x,y,sprite,xs,ys,ang,hp,shade)`, `nTur(...)`, and the same reversed
+`nPar(parent,child)`. Lines end in a **bare CR**, so `re.M` anchored on `\n`
+matches nothing — normalise before parsing. sh2 and sh1 name GM *resources*
+(`spr_Section01`); only sh3 stores a file path, which is why a hull using
+`Kae_detail/` art cannot be expressed as sh1 or sh2.
+
+### sh3 tier-2 — solved from the source, not from the files
+
+`nSec2b`, `nSec2c`, `nSec2M`, `nSecT` and `nSec2d` are **animation state**, and
+`tools/bsf/export.py` writes all of them. `ship export foo.sb4` produces the
+`.shp` the game loads.
+
+| record | sets | notes |
+|---|---|---|
+| `nSec2b` | `rs_*` | rotation: frames, borders, delays, start angle |
+| `nSec2c` | `ef_*` | glow/fade; the tail means `blurrage` when `effect == 5` and offsets/scales otherwise |
+| `nSec2M` | `ms_*` | movement: distance, direction, frames, delays |
+| `nSecT` | `tr_*` | triggers |
+| `nSec2d` | `eff_noglow`, `eff_shimmer` | **and `j += 1`** — this is what commits the section |
+
+**How, and why the earlier attempt failed.** Both are decompilable: the game
+carries the readers (`nSec2a`…), ShipMaker carries the `.sb4` readers (`nSecA`…)
+*and* `saveShipSHP`, its own writer. ShipMaker is a GM7 game, so `gm7.py`
+decrypts its tree and `gmscript.py` parses its 233 scripts exactly as for the
+game. **The source was available the whole time; the earlier pass inferred by
+aligning example files and concluded the format was unrecoverable.** Reach for
+the decompiled source before comparing artefacts.
+
+Two traps only the source shows:
+
+* **Order is depth, descending — and ties lose sections.** `saveShipSHP` builds
+  the order with `ds_map_add(objs, deep, id)` and drains it by key, so sections
+  sharing a depth collide and all but one vanish. `station_bolthole.sb4` has
+  five at depth 200; ShipMaker would export 126 of its 130. `export.py` sorts
+  stably and keeps all of them, warning that it diverged.
+* **Frames must be non-zero even when the animation is off.** `nSec2M`'s reader
+  computes `ms_dist/ms_aframes` unconditionally.
+
+Seams do not line up between the generations: `ef_fade` is stored by `nSecD` and
+read back by `nSec2c`, and the `.sb4` keeps fade as a *frame count* where the
+`.shp` keeps a *speed* (`resetFade`: `(hiborder - loborder) / frames`). Map per
+field, never per record.
+
+**The gate** is `roundtrip.py --export`: re-export every `.sb4` in the game's
+`Custom Ships/` that ships beside its own `.shp` and compare. Today that is
+Pendulum alone. It deliberately does **not** scan `mods/ships/`, because
+`ship export` writes the `.shp` next to the `.sb4` there — grading the writer
+against its own output passes by construction. Pendulum matches on every line
+except `//sh3 ver1` (it predates the `ver2` tag) and eight `nTrigS/nTrigW
+…,9,0,0` lines, which are inert: they set `tr_toggle` on parts whose four
+trigger types are all zero, and the game's `nSecT`/`nWepT` already do that for
+exactly those parts.
+
+**Trigger types ≥ 11 need a partner** named by an `nTrigS`/`nTrigW` record
+(11–16 a weapon, 17–19 a section). Without one the trigger is dangling and
+exports as 0 — Pendulum settles both directions in one file: its sections 6
+and 8 store type 17 *with* records and keep it; its first weapon stores 17
+without one and comes back 0.
+
 ## Weapons
 
 `ship arm <object>` takes the game's own object name -- `PointMaser`,
@@ -372,8 +463,12 @@ are the best source of "how does the game itself do this".
   `global.sections[]` array so ids are slots, but whether deletion compacts is
   unproven. One test settles it: load a ship in ShipMaker, delete a middle
   section, save, diff.
-- **Is sh3 `.shp` export in scope?** It is what the game actually loads, and it
-  would need its own gate.
+- **sh3 `.shp` export** — *reading* is done (see the generations table); writing
+  is blocked on the tier-2 records, not on the format. See "Still not understood"
+  above for the two approaches already tried and why each fails. This matters
+  because it is what the game loads: a mission that spawns a design spawns the
+  `.shp`, and `station_bolthole`'s is currently 20 sections against the `.sb4`'s
+  130.
 - **The decrypted tree stores each GML script as `[name][zlib body]`**, but only
   a handful inflated — the greedy slice swallowed streams. Fixing it would
   retire the memory dump and give authoritative GML with no wine.

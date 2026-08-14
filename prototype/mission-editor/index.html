@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PROTOTYPE — BSF mission editor · 4 shapes</title>
+<style>
+/* Tokens are the ones campaign/build.py already renders with — the variants are
+   meant to be judged on structure, not on palette. */
+:root {
+  --ground:#06090a; --panel:#0c1214; --panel2:#101819; --rule:#1d2a2a; --rule-soft:#16201f;
+  --ink:#c6d3cd; --ink-dim:#8b9c95; --ink-faint:#5d6d68;
+  --phos:#4ef08a; --phos-hot:#00ff00; --hostile:#ff5a4d; --alien:#ff5cff; --log:#f2f7f4;
+  --amber:#ffb648;
+  --mono:ui-monospace,"SF Mono","Cascadia Mono","JetBrains Mono","DejaVu Sans Mono",Consolas,monospace;
+  --serif:Charter,"Bitstream Charter","Iowan Old Style",Georgia,serif;
+}
+* { box-sizing:border-box; }
+html,body { height:100%; }
+body { margin:0; background:var(--ground); color:var(--ink); font:14px/1.5 var(--mono); overflow:hidden; }
+#stage { height:100vh; overflow:hidden; }
+::-webkit-scrollbar { width:9px; height:9px; }
+::-webkit-scrollbar-thumb { background:#1b2626; border-radius:4px; }
+::-webkit-scrollbar-track { background:transparent; }
+
+/* ---- the prototype switcher: deliberately not part of any design below ---- */
+#switch {
+  position:fixed; left:50%; bottom:14px; transform:translateX(-50%); z-index:9999;
+  display:flex; align-items:center; gap:2px; padding:3px;
+  background:#e8efe9; color:#06090a; border-radius:999px;
+  box-shadow:0 6px 26px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.15);
+  font:11px/1 var(--mono); letter-spacing:.06em; user-select:none;
+}
+#switch button { all:unset; cursor:pointer; padding:6px 9px; border-radius:999px; font:inherit; }
+#switch button:hover { background:rgba(6,9,10,.10); }
+#switch .lbl { padding:6px 12px; text-transform:uppercase; font-weight:700; white-space:nowrap; }
+#switch .lbl small { font-weight:400; text-transform:none; opacity:.55; margin-left:.5em; letter-spacing:0; }
+#switch .keys { padding-right:8px; opacity:.4; }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<style id="variant-css"></style>
+<div id="switch"></div>
+
+<script src="mission_data.js"></script>
+<script src="assets.js"></script>
+<script src="core.js"></script>
+<script src="timeline.js"></script>
+<script src="variant_1.js"></script>
+<script src="variant_2.js"></script>
+<script src="variant_3.js"></script>
+<!-- round one: layout shapes. C won and became the timeline chrome above;
+     A / B / D are kept reachable at ?variant=A|B|D for reference only. -->
+<script src="variant_a.js"></script>
+<script src="variant_b.js"></script>
+<script src="variant_c.js"></script>
+<script src="variant_d.js"></script>
+<script>
+/* PROTOTYPE shell — four shapes for the same editor on one route, ?variant=A..D.
+   Everything is in memory; nothing is written back to ep9.yaml. */
+(function () {
+  // Round two: three editing models on the timeline shape that won round one.
+  const KEYS = ['1', '2', '3'];
+  const subs = { select: [], change: [], unmount: [] };
+
+  window.App = {
+    mission: window.MISSION,
+    selected: 0,
+    dirty: false,
+    on(evt, cb) { subs[evt].push(cb); },
+    select(i) {
+      i = Math.max(0, Math.min(App.mission.beats.length - 1, i));
+      if (i === App.selected) return;
+      App.selected = i; subs.select.forEach((cb) => cb(i));
+    },
+    change() { App.dirty = true; subs.change.forEach((cb) => cb()); },
+  };
+
+  const stage = document.getElementById('stage');
+  const styleEl = document.getElementById('variant-css');
+  const bar = document.getElementById('switch');
+  let key = new URLSearchParams(location.search).get('variant') || KEYS[0];
+  if (!window.VARIANTS[key]) key = (key || '').toUpperCase();
+  if (!window.VARIANTS[key]) key = KEYS[0];
+
+  function mount(k) {
+    key = k;
+    subs.unmount.forEach((cb) => cb());
+    subs.select.length = 0; subs.change.length = 0; subs.unmount.length = 0;
+    const v = window.VARIANTS[k];
+    styleEl.textContent = v.css;
+    stage.innerHTML = '';
+    stage.dataset.variant = k;
+    v.mount(stage);
+    bar.innerHTML =
+      '<button data-d="-1" title="previous variant">&#9664;</button>' +
+      '<span class="lbl">' + k + ' — ' + v.name + '<small>' + v.blurb + '</small></span>' +
+      '<button data-d="1" title="next variant">&#9654;</button>' +
+      '<span class="keys">[ ]</span>';
+    bar.querySelectorAll('button').forEach((b) =>
+      b.onclick = () => go(KEYS.indexOf(key) + Number(b.dataset.d)));
+    const u = new URL(location); u.searchParams.set('variant', k);
+    history.replaceState(null, '', u);
+    document.title = 'PROTOTYPE ' + k + ' — ' + v.name;
+  }
+  function go(i) { mount(KEYS[(i + KEYS.length) % KEYS.length]); }
+
+  // ← / → belong to the timeline (they move the playhead and, with alt, a beat),
+  // so variant cycling lives on [ and ] instead.
+  addEventListener('keydown', (e) => {
+    const t = e.target, tag = t && t.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || (t && t.isContentEditable)) return;
+    if (e.key === '[') { go(KEYS.indexOf(key) - 1); e.preventDefault(); }
+    if (e.key === ']') { go(KEYS.indexOf(key) + 1); e.preventDefault(); }
+    if (e.key === 'ArrowDown') { App.select(App.selected + 1); e.preventDefault(); }
+    if (e.key === 'ArrowUp') { App.select(App.selected - 1); e.preventDefault(); }
+  });
+
+  mount(key);
+
+  // Game art arrives from the dev server (extracted from the exe in memory) and
+  // trickles in per sprite; a repaint is all any variant needs.
+  const repaint = () => subs.change.forEach((cb) => cb());
+  Assets.onload = repaint;
+  Assets.init().then((a) => {
+    console.log(a.ok ? `art: ${Object.keys(a.sprites).length} sprites from ${a.source}`
+      : `art: unavailable (${a.why}) — vector fallback`);
+    repaint();
+  });
+})();
+</script>
+</body></html>
