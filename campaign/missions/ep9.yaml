@@ -214,10 +214,10 @@ beats:
     spawn:
       - {ship: "mods/ships/station_bolthole.shp", team: ally, hold: true, facing: 90, x: 3409, y: 1102, name: station}
       - {object: ter_Planet, x: 3095, y: 461}
-      - {object: Hecate, hold: true, facing: 270, damage: 0.28, x: 2930, y: 707, name: berth1}
-      - {object: Cronus, hold: true, facing: 270, damage: 0.34, x: 3129, y: 775, name: berth2}
-      - {object: Athena, hold: true, facing: 270, damage: 0.22, x: 3700, y: 707, name: berth3}
-      - {object: Hestia, hold: true, facing: 270, damage: 0.4, x: 3877, y: 800, name: berth4}
+      - {object: Hecate, hold: true, facing: 270, x: 2930, y: 707, name: berth1}
+      - {object: Cronus, hold: true, facing: 270, x: 3129, y: 775, name: berth2}
+      - {object: Athena, hold: true, facing: 270, x: 3700, y: 707, name: berth3}
+      - {object: Hestia, hold: true, facing: 270, x: 3877, y: 800, name: berth4}
     say:
       who: Fleet HQ
       sprite: spr_MesHQ
