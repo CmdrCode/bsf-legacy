@@ -160,6 +160,16 @@ never saved, and changing mission resets it.
   `white red green blue amber magenta grey`.
 * Designed ships do not get the look block: a hull draws its own sections and
   ignores `sprite_index`, so the field would be a control that does nothing.
+  Written in by hand it is worse than nothing — the compiler drops it silently —
+  so the lint now says so and names the keys.
+* **Anything with a hull turns with `facing:`, and the map turns with it.** Both
+  keys land on `image_angle` — `angle:` from the look block, `facing:` from the
+  fixtures, which are emitted after it, so facing wins where a spawn carries
+  both — and every section of a hull places itself at
+  `l_offsetdir + l_owner.image_angle`. The map used to draw the design's own
+  orientation whatever the mission said, which is how EP9's four berthed hulls
+  came to lie nose-right beside the station on the map and nose-in to it in the
+  game.
 * `spawn:` is the one verb that is a **list**, so it has its own add and remove.
   Each prop gets a strip — `PROP 2 OF 3 · TER_PLANET` — with `remove ✕` on the
   right of it; `+ another prop` at the foot of the list adds one, offset from

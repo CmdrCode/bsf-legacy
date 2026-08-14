@@ -306,8 +306,17 @@ class Emitter:
         delay = say.get("delay", 0)
         return f"showMessage({delay},{color},{wv},{tv},{sprite})"
 
-    SPAWN_KEYS = {"object", "x", "y", "name", "sprite", "scale", "angle", "frame",
-                  "tint", "ship", "team", "hold", "facing", "damage"}
+    #: The look block — the assignments made *after* instance_create, so the ones
+    #: only an `object:` spawn ever gets. Ordered to match the editor's
+    #: `LOOK_KEYS`, not to match `spawn_stmt`'s if-chain: the five are
+    #: independent assignments to different properties, so their order among
+    #: themselves means nothing, while the order they are *named in* is a warning
+    #: both linters print and should print alike. (What does carry meaning is
+    #: that the fixtures come after the whole block — see `fixture_stmts`.)
+    LOOK_KEYS = ("sprite", "scale", "angle", "frame", "tint")
+
+    SPAWN_KEYS = {"object", "x", "y", "name",
+                  "ship", "team", "hold", "facing", "damage"} | set(LOOK_KEYS)
 
     #: `importShip(file, team, x, y)` is the game's own loader — it is what the
     #: sandbox's spawn-ship uses, and it returns the instance. The team numbers
@@ -367,6 +376,13 @@ class Emitter:
             self.lint.err(f"{where}: a spawn needs object: or ship:")
             return "0"
         self.lint.resource(sp["object"], where)
+        # Both keys write image_angle, and the fixtures land after the look
+        # block, so one of the two is simply overwritten. Said out loud because
+        # the file reads as though the hull could travel one way and point
+        # another — the same silence that let `facing:` go unnoticed on the map.
+        if "angle" in sp and "facing" in sp:
+            self.lint.warn(f"{where}: angle: and facing: both set image_angle, so "
+                           f"facing wins and angle: {sp['angle']} is dead. Drop one.")
         create = f"instance_create({sp['x']},{sp['y']},{sp['object']})"
         look = []
         tgt = f"global.{g}_{sp['name']}" if "name" in sp else "s"
@@ -410,6 +426,11 @@ class Emitter:
         `l_offsetdir + l_owner.image_angle` — while `direction` is where it
         would travel. A held hull only shows the first, but leaving the second
         pointing somewhere else is a trap for whoever later unholds it.
+
+        The fixtures are appended *after* the look block, so on a spawn carrying
+        both `angle:` and `facing:` the facing is the assignment that lands last
+        and wins. The editor's map reads it the same way round (`imageAngle` in
+        core.js); if this order ever changes, that changes with it.
         """
         out = []
         if sp.get("hold"):
@@ -505,6 +526,18 @@ class Emitter:
             self.lint.err(f"{where}: team '{sp['team']}' is not "
                           f"{' | '.join(sorted(self.TEAMS))}")
             team = 0
+        # The look block is `object:`-only: it is a list of assignments made
+        # after instance_create, and a design arrives through importShip
+        # instead. Silently dropping them is how `angle: 90` on a design became
+        # a rotation the author could see in the file and nowhere else — the
+        # editor's map cannot draw it either, for the same reason. `facing:` is
+        # the key that turns a hull, and it is a fixture, so it survives.
+        dead = [k for k in self.LOOK_KEYS if k in sp]
+        if dead:
+            self.lint.warn(f"{where}: {', '.join(dead)} on a design does nothing "
+                           f"— the look block is assigned after instance_create "
+                           f"and a design is loaded by importShip instead. To "
+                           f"turn one, use facing:")
         self.check_ship_file(path, where)
 
         tgt = f"global.{g}_{sp['name']}" if "name" in sp else "s"
