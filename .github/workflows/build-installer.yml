@@ -112,6 +112,18 @@ jobs:
       # the release is never briefly public with no download on it. `upload
       # --clobber` then covers the re-run case, where `create` fails because the
       # release already exists and `|| true` swallows that.
+      #
+      # --generate-notes appends GitHub's own notes below the --notes line (gh
+      # prepends --notes to generated ones), and --title keeps the release named
+      # after the tag rather than letting generation pick a title.
+      #
+      # KNOWN LIMIT: generated notes itemise merged PULL REQUESTS. This repo
+      # pushes straight to main and has never had a PR, so what lands is the
+      # "Full Changelog" compare link, not a per-commit list. The prose changelog
+      # lives in the annotated tag message; `--notes-from-tag` would publish that
+      # instead, but it cannot be combined with --notes and needs the release
+      # job's checkout to fetch tags (fetch-depth: 0), which it currently does
+      # not.
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -119,5 +131,6 @@ jobs:
           gh release create "${GITHUB_REF_NAME}" dist/BSF-Legacy-Installer.exe \
             --title "${GITHUB_REF_NAME}" \
             --notes "Windows installer. Requires your own copy of Battleships Forever v0.90d." \
+            --generate-notes \
             || true
           gh release upload "${GITHUB_REF_NAME}" dist/BSF-Legacy-Installer.exe --clobber
