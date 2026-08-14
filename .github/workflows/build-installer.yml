@@ -104,11 +104,20 @@ jobs:
         with:
           name: BSF-Legacy-Installer
           path: dist
-      - name: Attach to release
+      # Pushing a v* tag publishes. There is no draft state to review the exe in
+      # any more, so tag only what the gates have already passed -- the tag push
+      # IS the public act.
+      #
+      # The exe is passed to `create` rather than uploaded in a second step, so
+      # the release is never briefly public with no download on it. `upload
+      # --clobber` then covers the re-run case, where `create` fails because the
+      # release already exists and `|| true` swallows that.
+      - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "${GITHUB_REF_NAME}" --draft --title "${GITHUB_REF_NAME}" \
+          gh release create "${GITHUB_REF_NAME}" dist/BSF-Legacy-Installer.exe \
+            --title "${GITHUB_REF_NAME}" \
             --notes "Windows installer. Requires your own copy of Battleships Forever v0.90d." \
             || true
           gh release upload "${GITHUB_REF_NAME}" dist/BSF-Legacy-Installer.exe --clobber
