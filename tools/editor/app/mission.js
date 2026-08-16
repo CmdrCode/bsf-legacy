@@ -58,6 +58,21 @@ window.MissionPanel = (function () {
   const painted = (mm) =>
     ((mm.storm && mm.storm.mask) || []).reduce((n, r) => n + (r.match(/[#@]/g) || []).length, 0);
 
+  /* The meteor pair as the compiler will see it, without writing it down. A
+     mission file need not carry the block and the sheet still has to show two
+     numbers, but *opening* a panel must not edit the mission — filling the block
+     in here would put a value in the YAML that the author never typed. The block
+     is created when one of them is, in the input handler. */
+  const metOf = (mm) => Object.assign({}, Core.Meteors.DEFAULTS, mm.meteors || {});
+
+  /* How long an empty field takes to fill, which is the only thing `refill`
+     decides. Worth printing because the useful range has a ceiling the two
+     numbers hide: past the ~1 minute a rock survives, cap*interval no longer
+     reaches the cap and the density silently becomes something less than it
+     says. The room is 30 steps to the second. */
+  const ramp = (met) =>
+    `${met.cap * met.interval} frames ≈ ${Math.round(met.cap * met.interval / 30)}s`;
+
   /* Take the typed size. Clamped, rounded, and then the mask is squared up to
      the new grid on the spot — the alternative is a save that quietly drops the
      rows the room no longer has. */
@@ -80,6 +95,7 @@ window.MissionPanel = (function () {
 
   function html() {
     const mm = m();
+    const met = metOf(mm);
     const row = (label, inner) => `<div class="r"><span>${label}</span><div>${inner}</div></div>`;
     const t = (p, v) => `<input data-f="${p}" value="${Core.esc(v == null ? '' : v)}">`;
     const n = (p, v, w) => `<input data-f="${p}" data-n value="${v == null ? '' : v}"${w ? ` style="max-width:${w}"` : ''}>`;
@@ -98,9 +114,14 @@ window.MissionPanel = (function () {
       <textarea data-f="fail.ship" rows="3">${Core.esc((mm.fail && mm.fail.ship) || '')}</textarea>
       <h7>scenery</h7>
       ${row('nebulae', n('scenery.nebula', (mm.scenery && mm.scenery.nebula) || 0, '70px'))}
-      ${mm.meteors ? `<h7>meteors</h7>
-        ${row('interval', n('meteors.interval', mm.meteors.interval, '70px'))}
-        ${row('cap', n('meteors.cap', mm.meteors.cap, '70px'))}` : ''}
+      <h7>meteors</h7>
+      ${row('density', n('meteors.cap', met.cap, '70px'))}
+      ${row('refill', n('meteors.interval', met.interval, '70px'))}
+      <div class="hint"><b>density</b> is the number of rocks alive at once — a rock lives
+        until it leaves the room, so the field settles there and stays. <b>refill</b> is
+        frames between spawns, and only decides how long an empty field takes to reach
+        that number (<span data-ramp>${ramp(met)}</span>). Scale the two together to
+        change the density at the same ramp.</div>
       <div class="hint">the room is the world; the view stays 1024×768 and scrolls over it.
         <b>size</b> applies when you leave the field, not as you type — the storm mask is
         cut to fit it. <b>m</b> puts this away.</div>`;
@@ -113,9 +134,14 @@ window.MissionPanel = (function () {
     if (!el || !S.on) return;
     el.querySelectorAll('[data-f]').forEach((f) => {
       if (f === document.activeElement) return;
-      const v = read(f.dataset.f);
+      // Same fallback html() used, or a mission with no `meteors:` block would
+      // draw the defaults once and then be blanked by the first refresh.
+      const p = f.dataset.f;
+      const v = p.indexOf('meteors.') === 0 ? metOf(m())[p.slice(8)] : read(p);
       f.value = v == null ? '' : v;
     });
+    const rp = el.querySelector('[data-ramp]');
+    if (rp) rp.textContent = ramp(metOf(m()));
     el.querySelectorAll('[data-room]').forEach((f) => {
       if (f === document.activeElement) return;
       f.value = m().room[f.dataset.room];
@@ -161,6 +187,10 @@ window.MissionPanel = (function () {
         if (!isFinite(num)) return;
         v = num;
       }
+      // Typing one of the pair is what creates the block, and it has to arrive
+      // whole: setPath would write `meteors: {cap: 48}` and the YAML writer
+      // prints both keys, so the other one would go out as `undefined`.
+      if (p.indexOf('meteors.') === 0) Core.Meteors.ensure(m());
       write(p, v);
       App.change();          // the inspector's 'change' subscriber does the paint
     });

@@ -499,6 +499,16 @@ were designed for rather than discovered:
 - **The prediction draws the override.** `drawActor` takes the look and skips the
   hull when a sprite is overridden, because otherwise the map would be showing a
   ship the game is not going to draw.
+- **…including the rotation, which it did not.** `angle:` here and `facing:` in
+  the fixtures both compile to `image_angle`, and a hull reads it — every section
+  places itself at `l_offsetdir + l_owner.image_angle`. The hull branch passed
+  neither, so a moored ship drew at its design orientation on the map and at its
+  facing in the game; EP9's four berthed hulls lay nose-right against a station
+  they are supposed to be nose-in to. There is now one answer, `imageAngle`, and
+  it encodes the asymmetry rather than averaging it away: facing beats angle
+  because the fixtures are emitted last, and a `ship:` spawn honours facing only
+  because a design is loaded by `importShip` and never gets the look block at
+  all. The lint says so where that used to be silent.
 
 `tint` is written `#rrggbb`, which is a comment marker in YAML — so the writer
 quotes any flow-map value that is not a plain scalar, and only those: `x: "2760"`

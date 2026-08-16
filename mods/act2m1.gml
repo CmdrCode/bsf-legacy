@@ -7,7 +7,7 @@
 
 // ---------------------------------------------------------------- dialogue
 global.a2m1_t0 = "Captain, the Coalsack storm wall is dead ahead. Ratline beacons are dark again - we'll have to thread the lanes by eye.";
-global.a2m1_t1 = "Storm cells are marked in red. They will damage any section inside them. Rogue asteroids drift through the lanes - evade them or destroy them.";
+global.a2m1_t1 = "Storm cells are red clouds. They will damage any section inside them. Rogue asteroids drift through the lanes - evade them or destroy them.";
 global.a2m1_t2 = "Follow the Ratlines# #Reach each dead beacon in sequence";
 global.a2m1_t3 = "Beacon One confirmed, Captain. Four to go.";
 global.a2m1_t4 = "Hull stress rising Captain! Recommend we keep to the lane.";
@@ -62,7 +62,8 @@ if (!variable_global_exists('a2m1_interf')) global.a2m1_interf = 0;
 // The storm is a painted mask, one cell per 50 world units: `#` damages,
 // `@` damages harder, `.` is clear space. This is the only description of the
 // storm in the file — the red wash, the gas clouds and the damage test are all
-// read from these rows, so what the editor paints is exactly what bites.
+// read from these rows. What bites is the row, not the cloud: a puff is many
+// cells wide, so the gas laps over clear space the mask says nothing about.
 global.a2m1_cellsz = 50;
 global.a2m1_cols = 100;
 global.a2m1_rows = 40;
@@ -211,11 +212,18 @@ object_event_add(global.a2m1_stormobj, 3, 0,
     'sc = floor(x / global.a2m1_cellsz);' +
     'if (sr >= 0) { if (sr < global.a2m1_rows) { if (sc >= 0) { if (sc < global.a2m1_cols) {' +
     'sv = global.a2m1_g[sr * global.a2m1_cols + sc];' +
-    'if (sv = 1) l_hp -= global.a2m1_d1;' +
-    'if (sv = 2) l_hp -= global.a2m1_d2;' +
+    'if (sv = 1) damage(global.a2m1_d1, id);' +
+    'if (sv = 2) damage(global.a2m1_d2, id);' +
     '} } } }' +
     '}' +
     '}' +
+    'sr = floor(global.a2m1_ship.y / global.a2m1_cellsz);' +
+    'sc = floor(global.a2m1_ship.x / global.a2m1_cellsz);' +
+    'if (sr >= 0) { if (sr < global.a2m1_rows) { if (sc >= 0) { if (sc < global.a2m1_cols) {' +
+    'sv = global.a2m1_g[sr * global.a2m1_cols + sc];' +
+    'if (sv = 1) damage(global.a2m1_d1, global.a2m1_ship);' +
+    'if (sv = 2) damage(global.a2m1_d2, global.a2m1_ship);' +
+    '} } } }' +
     '}');
 object_event_clear(global.a2m1_stormobj, 8, 0);
 object_event_add(global.a2m1_stormobj, 8, 0,
@@ -314,11 +322,6 @@ object_event_add(global.a2m1_ctr, 0, 0,
     'global.l_objects[0] = -4;' +
     '}' +
     'global.jumpinships = false;' +
-    'global.a2m1_dmg[0] = noone; global.a2m1_dmgf[0] = 0.28;' +
-    'global.a2m1_dmg[1] = noone; global.a2m1_dmgf[1] = 0.34;' +
-    'global.a2m1_dmg[2] = noone; global.a2m1_dmgf[2] = 0.22;' +
-    'global.a2m1_dmg[3] = noone; global.a2m1_dmgf[3] = 0.4;' +
-    'alarm[6] = 60;' +
     'global.World_MaxRangeSqr = sqr(World_MaxRange);' +
     'stopMusic();' +
     's = instance_create(260,1000,Hestia);' +
@@ -413,7 +416,7 @@ object_event_add(global.a2m1_ctr, 2, 2,
 object_event_clear(global.a2m1_ctr, 2, 5);
 object_event_add(global.a2m1_ctr, 2, 5,
     'if (global.a2m1_meteors = 1) {' +
-    'if (instance_number(obs_Meteor) < 8) {' +
+    'if (instance_number(obs_Meteor) < 48) {' +
     'if (instance_exists(global.a2m1_ship)) {' +
     'var mm, px, py;' +
     'px = global.a2m1_ship.x; py = global.a2m1_ship.y;' +
@@ -424,25 +427,8 @@ object_event_add(global.a2m1_ctr, 2, 5,
     'mm.image_yscale = mm.image_xscale;' +
     '}' +
     '}' +
-    'alarm[5] = 210;' +
+    'alarm[5] = 35;' +
     '}');
-object_event_clear(global.a2m1_ctr, 2, 6);
-object_event_add(global.a2m1_ctr, 2, 6,
-    'var i, k, f;' +
-    'for (i = 0; i < 4; i += 1) {' +
-    'k = global.a2m1_dmg[i];' +
-    'f = global.a2m1_dmgf[i];' +
-    'if (instance_exists(k)) {' +
-    'k.l_syshp = 0;' +
-    'with (ShipSection) {' +
-    'if (l_owner = k) {' +
-    'if (l_hp > l_maxhp * f) l_hp = l_maxhp * f;' +
-    'k.l_syshp += l_hp;' +
-    '}' +
-    '}' +
-    '}' +
-    '}' +
-    'alarm[6] = 60;');
 object_event_clear(global.a2m1_ctr, 3, 0);
 object_event_add(global.a2m1_ctr, 3, 0,
     'if (global.ed_edit) exit;' +
@@ -537,10 +523,10 @@ object_event_add(global.a2m1_ctr, 7, 10,
     '}' +
     'if (instance_exists(global.a2m1_station)) { global.a2m1_station.l_holdposition = true; global.a2m1_station.l_myship = 0; global.a2m1_station.l_thrust = 0; global.a2m1_station.l_maxspeed = 0; global.a2m1_station.l_turning = 0; global.a2m1_station.direction = 90; global.a2m1_station.image_angle = 90; };' +
     'instance_create(3355,461,ter_Planet);' +
-    'global.a2m1_berth1 = instance_create(3190,707,Hecate); global.a2m1_berth1.l_holdposition = true; global.a2m1_berth1.l_myship = 0; global.a2m1_berth1.l_thrust = 0; global.a2m1_berth1.l_maxspeed = 0; global.a2m1_berth1.l_turning = 0; global.a2m1_berth1.direction = 270; global.a2m1_berth1.image_angle = 270; with (ShipSection) { if (l_owner = global.a2m1_berth1) l_hp = l_hp * 0.28; }; global.a2m1_dmg[0] = global.a2m1_berth1;' +
-    'global.a2m1_berth2 = instance_create(3389,775,Cronus); global.a2m1_berth2.l_holdposition = true; global.a2m1_berth2.l_myship = 0; global.a2m1_berth2.l_thrust = 0; global.a2m1_berth2.l_maxspeed = 0; global.a2m1_berth2.l_turning = 0; global.a2m1_berth2.direction = 270; global.a2m1_berth2.image_angle = 270; with (ShipSection) { if (l_owner = global.a2m1_berth2) l_hp = l_hp * 0.34; }; global.a2m1_dmg[1] = global.a2m1_berth2;' +
-    'global.a2m1_berth3 = instance_create(3960,707,Athena); global.a2m1_berth3.l_holdposition = true; global.a2m1_berth3.l_myship = 0; global.a2m1_berth3.l_thrust = 0; global.a2m1_berth3.l_maxspeed = 0; global.a2m1_berth3.l_turning = 0; global.a2m1_berth3.direction = 270; global.a2m1_berth3.image_angle = 270; with (ShipSection) { if (l_owner = global.a2m1_berth3) l_hp = l_hp * 0.22; }; global.a2m1_dmg[2] = global.a2m1_berth3;' +
-    'global.a2m1_berth4 = instance_create(4137,800,Hestia); global.a2m1_berth4.l_holdposition = true; global.a2m1_berth4.l_myship = 0; global.a2m1_berth4.l_thrust = 0; global.a2m1_berth4.l_maxspeed = 0; global.a2m1_berth4.l_turning = 0; global.a2m1_berth4.direction = 270; global.a2m1_berth4.image_angle = 270; with (ShipSection) { if (l_owner = global.a2m1_berth4) l_hp = l_hp * 0.4; }; global.a2m1_dmg[3] = global.a2m1_berth4;' +
+    'global.a2m1_berth1 = instance_create(3190,707,Hecate); global.a2m1_berth1.l_holdposition = true; global.a2m1_berth1.l_myship = 0; global.a2m1_berth1.l_thrust = 0; global.a2m1_berth1.l_maxspeed = 0; global.a2m1_berth1.l_turning = 0; global.a2m1_berth1.direction = 270; global.a2m1_berth1.image_angle = 270;' +
+    'global.a2m1_berth2 = instance_create(3389,775,Cronus); global.a2m1_berth2.l_holdposition = true; global.a2m1_berth2.l_myship = 0; global.a2m1_berth2.l_thrust = 0; global.a2m1_berth2.l_maxspeed = 0; global.a2m1_berth2.l_turning = 0; global.a2m1_berth2.direction = 270; global.a2m1_berth2.image_angle = 270;' +
+    'global.a2m1_berth3 = instance_create(3960,707,Athena); global.a2m1_berth3.l_holdposition = true; global.a2m1_berth3.l_myship = 0; global.a2m1_berth3.l_thrust = 0; global.a2m1_berth3.l_maxspeed = 0; global.a2m1_berth3.l_turning = 0; global.a2m1_berth3.direction = 270; global.a2m1_berth3.image_angle = 270;' +
+    'global.a2m1_berth4 = instance_create(4137,800,Hestia); global.a2m1_berth4.l_holdposition = true; global.a2m1_berth4.l_myship = 0; global.a2m1_berth4.l_thrust = 0; global.a2m1_berth4.l_maxspeed = 0; global.a2m1_berth4.l_turning = 0; global.a2m1_berth4.direction = 270; global.a2m1_berth4.image_angle = 270;' +
     'showMessage(0,$00FF00,"Fleet HQ",global.a2m1_t10,spr_MesHQ);' +
     '}' +
     'else if (l_messagecount = 17) {' +
@@ -627,10 +613,10 @@ object_event_add(global.a2m1_ctr, 7, 11,
     '}' +
     'if (instance_exists(global.a2m1_station)) { global.a2m1_station.l_holdposition = true; global.a2m1_station.l_myship = 0; global.a2m1_station.l_thrust = 0; global.a2m1_station.l_maxspeed = 0; global.a2m1_station.l_turning = 0; global.a2m1_station.direction = 90; global.a2m1_station.image_angle = 90; };' +
     'instance_create(3355,461,ter_Planet);' +
-    'global.a2m1_berth1 = instance_create(3190,707,Hecate); global.a2m1_berth1.l_holdposition = true; global.a2m1_berth1.l_myship = 0; global.a2m1_berth1.l_thrust = 0; global.a2m1_berth1.l_maxspeed = 0; global.a2m1_berth1.l_turning = 0; global.a2m1_berth1.direction = 270; global.a2m1_berth1.image_angle = 270; with (ShipSection) { if (l_owner = global.a2m1_berth1) l_hp = l_hp * 0.28; }; global.a2m1_dmg[0] = global.a2m1_berth1;' +
-    'global.a2m1_berth2 = instance_create(3389,775,Cronus); global.a2m1_berth2.l_holdposition = true; global.a2m1_berth2.l_myship = 0; global.a2m1_berth2.l_thrust = 0; global.a2m1_berth2.l_maxspeed = 0; global.a2m1_berth2.l_turning = 0; global.a2m1_berth2.direction = 270; global.a2m1_berth2.image_angle = 270; with (ShipSection) { if (l_owner = global.a2m1_berth2) l_hp = l_hp * 0.34; }; global.a2m1_dmg[1] = global.a2m1_berth2;' +
-    'global.a2m1_berth3 = instance_create(3960,707,Athena); global.a2m1_berth3.l_holdposition = true; global.a2m1_berth3.l_myship = 0; global.a2m1_berth3.l_thrust = 0; global.a2m1_berth3.l_maxspeed = 0; global.a2m1_berth3.l_turning = 0; global.a2m1_berth3.direction = 270; global.a2m1_berth3.image_angle = 270; with (ShipSection) { if (l_owner = global.a2m1_berth3) l_hp = l_hp * 0.22; }; global.a2m1_dmg[2] = global.a2m1_berth3;' +
-    'global.a2m1_berth4 = instance_create(4137,800,Hestia); global.a2m1_berth4.l_holdposition = true; global.a2m1_berth4.l_myship = 0; global.a2m1_berth4.l_thrust = 0; global.a2m1_berth4.l_maxspeed = 0; global.a2m1_berth4.l_turning = 0; global.a2m1_berth4.direction = 270; global.a2m1_berth4.image_angle = 270; with (ShipSection) { if (l_owner = global.a2m1_berth4) l_hp = l_hp * 0.4; }; global.a2m1_dmg[3] = global.a2m1_berth4;' +
+    'global.a2m1_berth1 = instance_create(3190,707,Hecate); global.a2m1_berth1.l_holdposition = true; global.a2m1_berth1.l_myship = 0; global.a2m1_berth1.l_thrust = 0; global.a2m1_berth1.l_maxspeed = 0; global.a2m1_berth1.l_turning = 0; global.a2m1_berth1.direction = 270; global.a2m1_berth1.image_angle = 270;' +
+    'global.a2m1_berth2 = instance_create(3389,775,Cronus); global.a2m1_berth2.l_holdposition = true; global.a2m1_berth2.l_myship = 0; global.a2m1_berth2.l_thrust = 0; global.a2m1_berth2.l_maxspeed = 0; global.a2m1_berth2.l_turning = 0; global.a2m1_berth2.direction = 270; global.a2m1_berth2.image_angle = 270;' +
+    'global.a2m1_berth3 = instance_create(3960,707,Athena); global.a2m1_berth3.l_holdposition = true; global.a2m1_berth3.l_myship = 0; global.a2m1_berth3.l_thrust = 0; global.a2m1_berth3.l_maxspeed = 0; global.a2m1_berth3.l_turning = 0; global.a2m1_berth3.direction = 270; global.a2m1_berth3.image_angle = 270;' +
+    'global.a2m1_berth4 = instance_create(4137,800,Hestia); global.a2m1_berth4.l_holdposition = true; global.a2m1_berth4.l_myship = 0; global.a2m1_berth4.l_thrust = 0; global.a2m1_berth4.l_maxspeed = 0; global.a2m1_berth4.l_turning = 0; global.a2m1_berth4.direction = 270; global.a2m1_berth4.image_angle = 270;' +
     '} }' +
     'if (l_seek >= 21) { if (l_seek_from < 21) {' +
     'global.a2m1_hestiax = instance_create(3644,701,Hestia);' +

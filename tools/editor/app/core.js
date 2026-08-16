@@ -155,6 +155,31 @@ window.Core = (function () {
     },
   };
 
+  // ----------------------------------------------------------------- meteors
+  /* The rock field, in build.py's two terms. `cap` is the density and `interval`
+     is only how fast an empty field refills: a rock lives until it leaves the
+     room — about a minute crossing EP9 — so the population saturates at `cap`
+     and sits there, and `interval` matters only in that cap*interval frames has
+     to fit inside that lifetime or the cap is never reached. Scaling the pair
+     together (cap x6, interval /6) makes the field denser at the same ramp.
+
+     `ensure` exists for the same reason Storm.ensure does: a mission file need
+     not carry the block, and the mission sheet still has to be able to edit it.
+     DEFAULTS is build.py's METEORS — the same two numbers on the other side of
+     the wire, and they want changing together. */
+  const Meteors = {
+    DEFAULTS: { interval: 240, cap: 8 },
+    ensure(m) {
+      if (!m.meteors) m.meteors = Object.assign({}, Meteors.DEFAULTS);
+      // A block that names one of the two is legal in the file; the compiler
+      // defaults the other, so the sheet must show the same value it will get.
+      for (const k in Meteors.DEFAULTS) {
+        if (m.meteors[k] == null) m.meteors[k] = Meteors.DEFAULTS[k];
+      }
+      return m.meteors;
+    },
+  };
+
   // ------------------------------------------------- beat numbering (build.py)
   // Beat 0 runs from alarm[2] with the counter still 0. Every later beat claims
   // the next rung; `wait: gate` reserves one extra slot so the MoveToArea's own
@@ -178,6 +203,24 @@ window.Core = (function () {
   function spawnLabel(sp) {
     if (sp.ship) return String(sp.ship).replace(/\\/g, '/').split('/').pop();
     return sp.object;
+  }
+
+  /* The `image_angle` the compiler will leave on a spawn — the one answer every
+     draw path here asks for, because there are two keys that reach it and they
+     do not reach it the same way.
+
+     `facing:` is a fixture (`direction` *and* `image_angle`) and applies to both
+     kinds of spawn. `angle:` is a look override, `image_angle` alone, and
+     build.py emits the look block *before* the fixtures — so where a spawn
+     carries both, facing is the assignment that lands last and wins. A `ship:`
+     spawn gets the fixtures and nothing else: `angle:` on a design is a key the
+     compiler never emits, which is why it must not rotate one here either.
+
+     Undefined, not 0, when neither key applies: every caller passes this straight
+     to a rotate that treats a falsy angle as "do not rotate". */
+  function imageAngle(sp) {
+    const a = sp.facing != null ? sp.facing : (sp.ship ? null : sp.angle);
+    return a == null ? undefined : a;
   }
 
   // What moves the counter off this beat — drawn on the connector, not the card.
@@ -286,12 +329,20 @@ window.Core = (function () {
      on the way in, where it is visible, rather than corrupting the file later. */
   const noteFrom = (text) => String(text).replace(/"/g, '”').split('\n');
 
-  /* A spawn is an object at a position, plus — optionally — what it should look
-     like. The look keys are assignments the compiler makes after
-     `instance_create`, i.e. after the object's own Create event, so they replace
-     whatever it chose for itself. In YAML order, which is also the card's. */
+  /* The look block: assignments the compiler makes after `instance_create`, i.e.
+     after the object's own Create event, so they replace whatever it chose for
+     itself — and therefore the ones only an `object:` spawn ever gets. Mirrors
+     build.py's `Emitter.LOOK_KEYS`, in the same order, so the warning the two of
+     them share names the keys the same way. */
+  const LOOK_KEYS = ['sprite', 'scale', 'angle', 'frame', 'tint'];
+
+  /* A spawn is an object at a position, plus — optionally — that look. In YAML
+     order, which is also the card's. The look keys are spread in rather than
+     re-typed as this list's tail: SPAWN_KEYS is the key *order* the writer
+     emits, so it is a plausible thing to reorder, and a hand-copied tail would
+     go on lint-checking the wrong five with nothing to say so. */
   const SPAWN_KEYS = ['object', 'ship', 'team', 'hold', 'facing', 'damage',
-    'x', 'y', 'name', 'sprite', 'scale', 'angle', 'frame', 'tint'];
+    'x', 'y', 'name', ...LOOK_KEYS];
   //: The three the compiler maps onto importShip's team argument.
   const TEAMS = ['player', 'ally', 'enemy'];
   /* What a team looks like. The game tints a hull by the side it spawns into —
@@ -430,6 +481,25 @@ window.Core = (function () {
             errs.push({ where: `beat ${i}`, msg: `team '${sp.team}' is not ${TEAMS.join(' | ')}` });
           if (sp.ship && window.Ships && Ships.state.list.length && !Ships.info(sp.ship))
             errs.push({ where: `beat ${i}`, msg: `no such ship design '${sp.ship}'` });
+          // The look block compiles for `object:` spawns only — a design gets
+          // importShip and the three fixtures, and build.py emits nothing else
+          // for it. The card never offers these on a design, so they can only
+          // arrive by hand; unsaid, `angle: 90` on a design would read as a
+          // rotation that neither the map nor the game will ever perform.
+          if (sp.ship) {
+            const dead = LOOK_KEYS.filter((k) => sp[k] != null);
+            if (dead.length)
+              warn(`beat ${i}`, `${dead.join(', ')} on a design does nothing — the look `
+                + 'block is assigned after instance_create and a design is loaded by '
+                + 'importShip instead. To turn one, use facing:');
+          // The other silent case, and the same shape: both keys write
+          // image_angle, so on an object carrying both the file reads as if the
+          // hull could travel one way and point another. It cannot — one of the
+          // two assignments is simply overwritten — so say which.
+          } else if (sp.angle != null && sp.facing != null) {
+            warn(`beat ${i}`, 'angle: and facing: both set image_angle, so facing '
+              + `wins and angle: ${sp.angle} is dead. Drop one.`);
+          }
           if (sp.tint != null && TINTS.indexOf(String(sp.tint).toLowerCase()) < 0
               && !/^#?[0-9a-fA-F]{6}$/.test(String(sp.tint)))
             errs.push({ where: `beat ${i}`, msg: `tint '${sp.tint}' is not #rrggbb or one of ${TINTS.join(', ')}` });
@@ -672,31 +742,40 @@ window.Core = (function () {
     m.beats.forEach((b, bi) => (b.spawn || []).forEach((sp, si) => spawns.push({ sp, bi, si })));
     // an object as the game would draw it: a real hull if the render-model dump
     // has one, else the object's own sprite with its own blend
-    function drawActor(obj, wx, wy, alpha, team, look) {
+    function drawActor(sp, wx, wy, alpha, team) {
       if (!art) return false;
+      // Both branches turn: the hull because every section places itself at
+      // `l_offsetdir + l_owner.image_angle`, the sprite because that is what
+      // image_angle means. This is the whole of what `facing:` does to a hull
+      // that never moves — four berthed ships drew nose-right on the map and
+      // nose-in in the game, and only the game was rotating them.
+      const obj = sp.object, angle = imageAngle(sp);
       // A look override replaces the object's own sprite, so a hull would be
       // drawing something the game will not: `sprite_index` is assigned after
       // Create and the prediction has to agree.
-      if (!(look && look.sprite)) {
+      if (!sp.sprite) {
         const hull = art.ship(obj);
         if (hull) {
           let ok = false;
-          world(() => { ctx.globalAlpha = alpha; ok = art.drawShip(ctx, hull, wx, wy, { team: team || 0 }); ctx.globalAlpha = 1; });
+          world(() => {
+            ctx.globalAlpha = alpha;
+            ok = art.drawShip(ctx, hull, wx, wy, { team: team || 0, angle: angle });
+            ctx.globalAlpha = 1;
+          });
           if (ok) return true;
         }
       }
-      const o2 = { alpha: alpha };
-      if (look) {
-        if (look.scale != null) o2.scale = look.scale;
-        if (look.angle != null) o2.angle = look.angle;
-        if (look.frame != null) o2.frame = look.frame;
-        if (look.tint != null) o2.tint = tintCSS(look.tint);
-      }
+      // `angle` is resolved for every record, the player's included, so it goes
+      // in the literal; the rest are look keys the player start does not have.
+      const o2 = { alpha: alpha, angle: angle };
+      if (sp.scale != null) o2.scale = sp.scale;
+      if (sp.frame != null) o2.frame = sp.frame;
+      if (sp.tint != null) o2.tint = tintCSS(sp.tint);
       let drew = false;
       world(() => {
-        drew = look && look.sprite
-          ? art.blit(ctx, look.sprite, wx, wy, Object.assign(
-            { tint: art.sprites[look.sprite] && art.sprites[look.sprite].mask ? 'rgb(255,255,255)' : null }, o2))
+        drew = sp.sprite
+          ? art.blit(ctx, sp.sprite, wx, wy, Object.assign(
+            { tint: art.sprites[sp.sprite] && art.sprites[sp.sprite].mask ? 'rgb(255,255,255)' : null }, o2))
           : art.drawObject(ctx, obj, wx, wy, o2);
       });
       return drew;
@@ -715,12 +794,12 @@ window.Core = (function () {
         if (window.Ships) {
           world(() => {
             real = Ships.draw(ctx, sp.ship, sp.x, sp.y,
-              { alpha: alpha, angle: sp.facing, tint: TEAM_TINT[sp.team] });
+              { alpha: alpha, angle: imageAngle(sp), tint: TEAM_TINT[sp.team] });
           });
         }
       } else {
-        real = drawActor(sp.object, sp.x, sp.y, alpha,
-          /ally|Allied|Space|Hestia/.test(sp.object) ? 1 : 2, sp);
+        real = drawActor(sp, sp.x, sp.y, alpha,
+          /ally|Allied|Space|Hestia/.test(sp.object) ? 1 : 2);
       }
       ctx.globalAlpha = held ? 1 : shown ? (on ? 1 : 0.28) : 0.13;
       ctx.strokeStyle = held ? HOT : ALIEN; ctx.lineWidth = held ? 2.5 : 1.5;
@@ -750,7 +829,10 @@ window.Core = (function () {
     // player start
     const px = X(m.player.x), py = Y(m.player.y);
     const pheld = grabbed({ kind: 'player' });
-    if (!drawActor(m.player.object, m.player.x, m.player.y, 1, 0)) {
+    // The player start is a spawn record with a subset of the keys — the
+    // compiler creates it the same way — so it goes through the same door
+    // rather than through a call shaped specially for it.
+    if (!drawActor(m.player, m.player.x, m.player.y, 1, 0)) {
       ctx.fillStyle = PHOS;
       ctx.beginPath(); ctx.moveTo(px + 8, py); ctx.lineTo(px - 6, py - 6); ctx.lineTo(px - 6, py + 6); ctx.closePath(); ctx.fill();
     }
@@ -807,13 +889,14 @@ window.Core = (function () {
     nebula: 'ter_Nebula scattered over the room at create',
     storm: ["# The storm — a painted field, not a list of circles. One cell is `cell`",
       "# world units; '#' costs a section `dmg` HP per step, '@' costs `hot`, '.' is",
-      '# clear space. The red gas clouds are drawn from these same cells, so what',
-      '# you can see is exactly what bites. Paint it in tools/editor.'],
+      '# clear space. The gas clouds are scattered over these same cells, but a',
+      '# cloud is many cells wide — gas laps over clear space, and only the mask',
+      '# bites. Paint it in tools/editor.'],
     density: 'gas-cloud puffs per filled cell',
     lightning: 'average frames between strikes (0 = none)',
     gates: ['# Dead beacons flown in order (MoveToArea gates).'],
     interval: 'frames between spawn attempts while on',
-    cap: 'max live obs_Meteor',
+    cap: 'max live obs_Meteor — this is the density',
   };
 
   function toYaml(m) {
@@ -1031,7 +1114,7 @@ window.Core = (function () {
   return {
     onoff, esc, brk, sayClass, spawnLabel,
     numberBeats, advanceOf, actionsOf, geoOf, stateAt, pingAt, pingAnchors,
-    noteLines, noteText, noteFrom, getPath, setPath,
-    lint, drawMap, toYaml, Model, Storm,
+    noteLines, noteText, noteFrom, getPath, setPath, LOOK_KEYS,
+    lint, drawMap, toYaml, Model, Storm, Meteors,
   };
 })();
