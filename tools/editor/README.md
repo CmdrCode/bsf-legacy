@@ -221,6 +221,18 @@ mission and seeks back to the beat you were on — about 1.6 s end to end. A lin
 failure aborts before anything is written, so the game never runs a mission that
 is not in the file.
 
+**Launching installs first.** Starting the game builds every mission and copies
+the result into the install — the GML *and* the `.shp` designs under
+`mods/ships/` — so a game that was started rather than applied to is still the
+mission that is on disk. It used to run whatever the last apply had left in the
+game directory, which is mild while the difference is only text and not mild at
+all when it is a hull: `importShip` reads a design from the game directory at
+spawn time, so a design that has never been installed is simply absent from the
+room, and an empty lane reads as a mission bug rather than as a stale install.
+A mission with lint errors is not installed at all, so opening *that* mission is
+refused — coming up on its previous build looks exactly like an edit that did
+nothing.
+
 With the game running, **control direction flips with the pause state**: paused,
 selecting a beat seeks the game to it; playing, the playhead follows the game.
 The **ghost overlay** (`g`) draws the game's own instance dump over the
