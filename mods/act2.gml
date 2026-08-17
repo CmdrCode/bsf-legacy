@@ -294,6 +294,43 @@ object_event_add(GUI_BriefingText, 0, 0,
     '    l_text = "Act II Episode 11 - Work In Progress";' +
     '    global.chooseBB = 0; global.chooseDD = 0; global.choosePC = 0;' +
     '  }' +
+    // ------------------------------------------------------------ the wrap
+    // Stock wraps l_text to 900px at the END of its own Create -- which is to
+    // say BEFORE this append, on the "Work In Progress" text this append then
+    // replaces. So an Act II briefing reached the screen with no line breaks
+    // except the ones written into the prose, and every paragraph ran off the
+    // right of the room: the reader lost the last three or four words of each
+    // line and there was nothing on screen to say so.
+    //
+    // Same algorithm and same 900px as stock, so an Act II briefing wraps
+    // exactly where an Act I one does. 900 leaves 74px of margin at x+50+900
+    // in a 1024-wide room, and clears the HQ portrait at x 748: text that
+    // reaches the portrait's rows is short enough by then. Verified against
+    // mission 2, the longest stock briefing.
+    //
+    // string_width counts '#' as a line break and returns the WIDEST line, so
+    // measuring the whole prefix each time measures the line being built.
+    '  if (global.mission >= 8) {' +
+    '    if (global.mission <= 10) {' +
+    '      draw_set_font(ReadingFont);' +
+    '      var bi, bn, bw, bls;' +
+    '      bls = 0;' +
+    '      bn = string_length(l_text);' +
+    '      for (bi = 1; bi < bn; bi += 1) {' +
+    '        if (string_char_at(l_text, bi) == " ") bls = bi;' +
+    '        bw = string_width(string_copy(l_text, 1, bi));' +
+    '        if (bw > 900) {' +
+    // No space to break at -- one word longer than the line. Stock would
+    // insert at index 0, which GML clamps to 1, breaking the text at its
+    // front and looping on the same character. Leave the word long instead.
+    '          if (bls < 1) continue;' +
+    '          l_text = string_insert("#", l_text, bls);' +
+    '          l_text = string_delete(l_text, bls + 1, 1);' +
+    '          bi = bls;' +
+    '        }' +
+    '      }' +
+    '    }' +
+    '  }' +
     '}');
 
 // --------------------------------------------------------------------------
