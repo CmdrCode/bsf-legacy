@@ -3,7 +3,8 @@
 
     ship tree     Pendulum.sb4                 hierarchy, mounts under their host
     ship render   Pendulum.sb4 -o out.png --scale 6
-    ship serve    Pendulum.sb4                 live browser preview
+    ship serve   [Pendulum.sb4|DIR ...]        live browser preview, all hulls
+                                               in one page on one port
     ship select   'weapon and x > 60' Pendulum.sb4 --shot sel.png
     ship check    Pendulum.sb4 [--accept]      lint, with a known-findings baseline
     ship move   5 --by +4,-2      Pendulum.sb4
@@ -693,13 +694,27 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument('--size', type=float,
                    help="override l_size instead of measuring the hull")
 
-    p = with_file(sub.add_parser('serve', help='live preview in a browser'))
+    p = sub.add_parser('serve', help='live preview in a browser')
+    p.add_argument('targets', nargs='*', metavar='FILE|DIR',
+                   help='ships or folders to watch; a named file is the one '
+                        'shown first. Default: this repo\'s mods/ships and the '
+                        'game\'s Custom Ships.')
+    p.add_argument('--root', action='append', default=[], metavar='DIR',
+                   help='another folder to list, repeatable')
     p.add_argument('--port', type=int, default=8771)
-    p.add_argument('--bind', default='127.0.0.1')
+    p.add_argument('--bind', default='auto',
+                   help="'auto' (default) listens on loopback and, when "
+                        'Tailscale is up, on the tailnet too; or give one address')
 
     args = ap.parse_args(glue_pairs(sys.argv[1:] if argv is None else argv))
     if args.cmd == 'parts':
         return do_parts(args)
+
+    # `serve` takes a *set* of ships, so it is dispatched before the single-file
+    # resolution below rather than through it.
+    if args.cmd == 'serve':
+        import serve
+        return serve.run(args.targets, args.root, args.bind, args.port)
 
     path = pathlib.Path(args.file).expanduser()
     if not path.exists():
@@ -781,10 +796,6 @@ def main(argv: list[str] | None = None) -> int:
         d = history.diff(path, args.rev)
         print(d if d.strip() else 'no differences')
         return 0
-
-    if args.cmd == 'serve':
-        import serve
-        return serve.run(path, args.bind, args.port)
 
     # -- mutating ----------------------------------------------------------
     try:

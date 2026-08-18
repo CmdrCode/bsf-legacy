@@ -12,7 +12,10 @@ Run everything from `tools/bsf/`. Deps: Pillow, numpy. No wine, no game.
 ship tree       <file> [--json]        hierarchy; mounts listed under their host
 ship render     <file> -o out.png [--scale N] [--no-bridge]
 ship scene      <file>                 the flat draw list as JSON
-ship serve      <file> [--bind IP] [--port N]     live browser preview
+ship serve      [FILE|DIR ...] [--root DIR] [--bind auto|IP] [--port N]
+                                       live browser preview of every hull in
+                                       the watched roots, on one port; prints
+                                       the URL, tailnet one included
 ship select     '<query>' <file> [--shot PNG] [--scale N] [--json]
 ship check      <file> [--accept] [--all]
 ship visibility <file> [--json]
@@ -223,6 +226,73 @@ Other things that will bite:
   everything deeper back one; it used to hand out `next_depth()`, which put the
   reflection at the very back of the stack and drew one of four identical spar
   caps behind the spar the other three sat in front of.
+
+### The live preview page
+
+`ship serve` watches **roots, not a file**: every hull in them is in one
+dropdown on one port. Bare, the roots are this repo's `mods/ships` and the
+game's `Custom Ships` (via `paths.py`); naming files or directories replaces
+that set, and `--root DIR` adds one. A named *file* is also the hull shown
+first — otherwise it is the most recently saved `.sb4`. Roots are rescanned
+every tick, so a hull ShipMaker saves appears without a restart. The scan is one
+level deep.
+
+```
+GET /                      the page
+GET /index[?ship=KEY]      the list, plus the selected hull's content hash
+GET /scene.json?ship=KEY   the draw list, sprites inlined, `rev` alongside
+```
+
+- **A KEY is `<root-index>/<filename>`, resolved only by lookup in the current
+  scan.** It is never joined onto a directory, so `?ship=../../etc/passwd` is a
+  miss rather than something traversal has to be defended against. This is not
+  theoretical: `--bind` is the documented way to show work to someone.
+- **Both generations are listed.** A `.shp` beside a same-stem `.sb4` is
+  indented under it and marked **⚠ stale** when its mtime is older — D20 made
+  visible, so "did I re-export?" is answered on the page. Unpaired `.shp` (the
+  stock hulls in `Custom Ships`) are ordinary entries.
+- **The selected hull is content-hashed; the rest are stamped.** `/index`
+  returns sha256 for the one on show and `(mtime, size)` for every other, which
+  drives a **●** on hulls that changed while you were looking elsewhere. The dot
+  is therefore approximate — a same-second, same-size rewrite elsewhere can miss
+  — while the repaint of the hull you are watching is exact.
+- **`/scene.json` returns the `rev` it served**, so a switch costs one fetch
+  rather than two. Without it the next poll sees a different hash and re-fetches
+  a scene the canvas already holds.
+- **`/index` echoes the key it answered about as `req`.** A poll in flight when
+  you switch hulls answers about the *previous* one; adopting that undoes the
+  switch, which is exactly what two fast presses of `]` did until `req` existed.
+- **Zoom, pan and the toggles survive a switch** — flipping between two hulls at
+  one scale and screen position is a blink comparator. `0` or a double-click
+  re-centres, which is what makes keeping the pan safe. `[` and `]` cycle.
+- **A failure is one hull's.** A scene that will not build draws a card naming
+  the file and the exception while the server stays green, retried once after
+  200 ms so a half-written ShipMaker save heals itself. Note the model is
+  *lenient* — junk content builds a bare core rather than raising — so this path
+  is for I/O and for bugs, not for malformed files.
+- Nothing on the wire carries an absolute path: roots travel as short labels,
+  repo-relative inside the checkout and the bare directory name outside it.
+
+**Where it listens.** `--bind auto` is the default and opens *two* sockets:
+loopback, and the Tailscale address when `tailscale ip -4` reports one in
+`100.64.0.0/10`. Two sockets rather than a wildcard bind is the point — the URL
+works from another of your devices without the page being offered to whatever
+network the machine is on. `--bind <addr>` forces a single socket, so
+`--bind 127.0.0.1` is the opt-out and `--bind 0.0.0.0` the deliberate LAN
+exposure. The IP is used rather than the MagicDNS name because the name is the
+machine's hostname and a URL travels.
+
+Startup prints one line per address, deep-linked to the hull that was named on
+the command line (bare, no `?ship=` — the page picks the newest itself and a
+link would be a guess). **Starting a second server on a port that already has
+one is refused**: `run()` fetches `/index` first, and if a preview is there it
+prints the URL for your hull and exits 0, or exits 4 saying the running one does
+not watch that file. So re-running `ship serve <hull>` is how you recover a lost
+URL.
+
+`serve.resolve(route, query, index)` is split out of the request handler so all
+of the above is testable without a socket; `selftest.py` drives it directly,
+along with `addresses()`, `tailscale_ip()` and `_links()`.
 
 ### Mount stats, and the `-1` sentinel
 

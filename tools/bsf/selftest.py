@@ -467,6 +467,133 @@ def test_decode_reads_as_text():
     ok(True, 'decode/encode is exact for every file')
 
 
+def test_serve_index_and_routes():
+    """The preview's ship list, without a socket.
+
+    `resolve()` is split out of the request handler precisely so this can run:
+    the fiddly half of the multi-ship page is pairing, staleness and key
+    resolution, and none of it is visible in a render.
+    """
+    import ipaddress
+    import json
+    import os
+    import serve
+
+    with tempfile.TemporaryDirectory() as td:
+        root = pathlib.Path(td)
+        sb4 = root / 'hull.sb4'
+        sb4.write_bytes(BOLTHOLE.read_bytes())
+        shp = root / 'hull.shp'
+        shp.write_bytes(BOLTHOLE.read_bytes())      # content is irrelevant here
+        lone = root / 'orphan.shp'
+        lone.write_bytes(BOLTHOLE.read_bytes())
+        (root / 'hull.sb4.txt').write_text('a ShipMaker description sidecar')
+
+        os.utime(shp, (1, 1))                       # export older than its source
+        ix = serve.Index([root])
+        keys = [e['key'] for e in ix.entries]
+        ok(keys == ['0/hull.sb4', '0/hull.shp', '0/orphan.shp'],
+           'the index lists .sb4 first, its export next, orphans in order',
+           str(keys))
+        by = ix.by_key
+        ok(by['0/hull.shp']['pair'] == '0/hull.sb4',
+           'a same-stem .shp is paired to its source')
+        ok(by['0/hull.shp']['stale'] is True,
+           'an export older than its .sb4 is flagged stale')
+        ok(by['0/orphan.shp']['pair'] is None
+           and by['0/orphan.shp']['stale'] is False,
+           'an unpaired .shp is neither paired nor stale')
+        ok(not any(e['file'].endswith('.txt') for e in ix.entries),
+           'description sidecars are not ships')
+        wire = json.dumps({'roots': ix.labels, 'ships': ix.entries})
+        ok(str(root) not in wire and str(root.parent) not in wire,
+           'nothing on the wire carries the root\'s absolute path')
+
+        os.utime(shp, None)                         # re-export: no longer behind
+        ix.rescan()
+        ok(ix.by_key['0/hull.shp']['stale'] is False,
+           'a fresh export clears the stale mark')
+
+        st, ctype, body = serve.resolve('index', {}, ix)
+        got = json.loads(body)
+        ok(st == 200 and 'json' in ctype, 'GET /index is JSON')
+        ok(got['sel'] == '0/hull.sb4',
+           'with nothing named, the newest .sb4 is picked', str(got['sel']))
+        ok(got['rev'] and len(got['rev']) == 12, 'the selected hull carries a hash')
+        ok(got['roots'] == [root.name], 'roots are labelled, not pathed')
+
+        st, _c, body = serve.resolve('index', {'ship': ['9/nope.sb4']}, ix)
+        got = json.loads(body)
+        ok(got['gone'] is True and got['sel'] == '0/hull.sb4',
+           'a vanished selection falls back and says so')
+        # A poll in flight when the page switches hulls answers about the old
+        # one. Without `req` the page cannot tell, and adopting the answer
+        # undoes the switch -- which is exactly what it did once.
+        ok(got['req'] == '9/nope.sb4',
+           'an answer names the key it was asked about')
+
+        st, _c, body = serve.resolve('scene.json', {'ship': ['9/nope.sb4']}, ix)
+        ok(st == 404, 'an unknown key is a 404, not a file read', str(st))
+        st, _c, body = serve.resolve('scene.json', {'ship': ['0/../../etc/passwd']}, ix)
+        ok(st == 404, 'a traversal-shaped key is just a miss', str(st))
+
+        st, _c, body = serve.resolve('scene.json', {'ship': ['0/hull.sb4']}, ix)
+        got = json.loads(body)
+        served_rev = got.pop('rev', None)
+        want = scene.for_web(scene.build(model.load(sb4)))
+        ok(st == 200 and got == want,
+           'the served scene is the scene the renderer draws')
+        _st, _c, ixb = serve.resolve('index', {'ship': ['0/hull.sb4']}, ix)
+        ok(served_rev == json.loads(ixb)['rev'],
+           'a scene names its own revision, so the page re-fetches only on change')
+
+        # The model is lenient -- junk content previews as a bare core rather
+        # than raising -- so the failure path is reached by I/O and by a bug in
+        # the build, not by a malformed file. Both are isolated to one hull.
+        lone.unlink()                               # deleted between scan and read
+        st, _c, body = serve.resolve('scene.json', {'ship': ['0/orphan.shp']}, ix)
+        ok(st == 404 and 'error' in json.loads(body),
+           'a hull deleted mid-flight answers with a reason, not a traceback',
+           str(st))
+        real_build = scene.build
+        scene.build = lambda *a, **k: (_ for _ in ()).throw(ValueError('boom'))
+        try:
+            st, _c, body = serve.resolve('scene.json', {'ship': ['0/hull.sb4']}, ix)
+        finally:
+            scene.build = real_build
+        ok(st == 500 and json.loads(body).get('error', '').startswith('ValueError'),
+           'a failed scene build is one hull failing, named')
+        st, _c, _b = serve.resolve('index', {'ship': ['0/hull.sb4']}, ix)
+        ok(st == 200, 'and the index still serves around it')
+
+        ix2 = serve.Index([root], first=sb4)
+        ok(ix2.default() == '0/hull.sb4', 'a named file is the initial selection')
+
+        # Where it listens. `auto` is loopback plus the tailnet when there is
+        # one -- two sockets rather than a wildcard bind, so the URL works from
+        # another device without offering the page to the local network.
+        ok(serve.addresses('192.168.1.9') == [('192.168.1.9', '')],
+           'an explicit --bind is taken literally, one socket')
+        auto = serve.addresses('auto')
+        ok(auto[0][0] == '127.0.0.1' and len(auto) <= 2,
+           'auto always listens on loopback first', str(auto))
+        ok(all(h != '0.0.0.0' for h, _n in auto),
+           'auto never binds the wildcard')
+        ts = serve.tailscale_ip()
+        ok(ts is None or ipaddress.ip_address(ts) in serve._CGNAT,
+           'a detected tailnet address is in the CGNAT range, not any 100.x',
+           str(ts))
+        ok((len(auto) == 2) == (ts is not None),
+           'the tailnet address is offered exactly when Tailscale is up')
+        links = serve._links([('10.0.0.1', 'note')], 8771, '0/a b.sb4')
+        ok(links == ['  http://10.0.0.1:8771/?ship=0%2Fa%20b.sb4   note'],
+           'a deep link quotes the key, spaces and all', str(links))
+
+    empty = serve.Index([pathlib.Path(td) / 'gone'])
+    ok(empty.entries == [] and empty.default() is None,
+       'a missing root is empty, not an exception')
+
+
 def test_corpus_mining():
     data = catalogue.build_cooccurrence()
     ok(data['parsed'] > 90, 'most ship files yield section placements',
