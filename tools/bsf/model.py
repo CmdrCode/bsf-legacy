@@ -42,6 +42,14 @@ BYTE_OFFSET = 68
 #: (comment banners, blank lines, stray GML in sh1/sh2 files) is kept verbatim.
 RECORD_RE = re.compile(r'^(n[A-Za-z0-9_]*),')
 
+#: Characters a string field cannot carry, and the word for each in an error.
+#: The format has no escaping: a comma ends the field, a newline ends the
+#: record, and a quote closes the string. None of the three can be written and
+#: read back -- and because the game compiles what it reads (see `export.py`),
+#: what comes back is not a corrupt field but different code.
+FIELD_UNSAFE = {',': 'a comma', '"': 'a quote', '\r': 'a newline', '\n': 'a newline'}
+
+
 #: Records we parse into typed views. Everything else round-trips untouched.
 UNDERSTOOD = {'nShp', 'nShp2', 'nCor', 'nSecA', 'nSecMir',
               'nWepA', 'nWepB', 'nWepMir',
@@ -1040,10 +1048,12 @@ class Ship:
         if r is None:
             raise ValueError(f'{self.path.name} has no nShp record to name')
         old = r.txt(self.NAME)
-        # A comma would split the field into two on the next read, and the
-        # loader has no escaping for it.
-        if ',' in v:
-            raise ValueError('a ship name cannot contain a comma')
+        # The name is not data. The game rebuilds each record as a GML call and
+        # installs the result as the ship object's Create event, so a field that
+        # ends early does not corrupt a ship -- it compiles.
+        bad = sorted({FIELD_UNSAFE[c] for c in v if c in FIELD_UNSAFE})
+        if bad:
+            raise ValueError('a ship name cannot contain ' + ' or '.join(bad))
         r.set_txt(self.NAME, f'"{v}"' if old.strip().startswith('"') else v)
 
     # -- sections ----------------------------------------------------------

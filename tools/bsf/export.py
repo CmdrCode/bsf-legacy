@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import math
 import pathlib
+import re
 
 import model
 import sprites
@@ -83,6 +84,34 @@ def gm_mod(a: float, b: float) -> float:
     signed, so using Python's `%` silently mirrors every port-side turret.
     """
     return math.fmod(a, b)
+
+
+# --------------------------------------------------------------------------
+# writing a string field
+# --------------------------------------------------------------------------
+#
+# A `.shp` field is not data. The game's `parseReadParams` rebuilds every record
+# as a GML call -- `nSec2a,1,2,...` becomes `nSec2a(1,2,...)` -- concatenates the
+# file into one string and installs it as the new ship object's Create event,
+# which compiles it. So a field that ends early does not corrupt a ship: it
+# becomes code, and the format has no escape to write instead. Both writers
+# below narrow a string to what the loader can read back.
+#
+# ⚠ The game's own filter is not a second line of defence behind this. It is a
+# five-substring denylist (`file_`, `execute_`, `registry_`, `object_event_`,
+# `script_`) that runs only on the sh1/sh2 path, and its `string_pos` arguments
+# are the wrong way round -- `string_pos(words, "file_")` looks for the whole
+# ship inside the five-character literal, so it never fires.
+
+
+def _qstr(s: str) -> str:
+    """One quoted field, with the outer quotes dropped and re-added."""
+    return '"%s"' % ''.join(c for c in s.strip('"') if c not in model.FIELD_UNSAFE)
+
+
+def _ident(s: str) -> str:
+    """One bare resource name -- `nTur2`'s weapon is an identifier or it is code."""
+    return re.sub(r'\W', '', s)
 
 
 # --------------------------------------------------------------------------
@@ -245,8 +274,8 @@ def sb4_to_sh3(ship: model.Ship, *, size: float | None = None,
     out.append('nShp2,' + ','.join([
         _tok(shp, 1), _tok(shp, 2), _tok(shp, 3), _tok(shp, 4), _tok(shp, 5),
         _tok(cor, 8),                                  # l_formrank
-        '"%s"' % _tok(shp, 6, '').strip('"'),
-        '"%s"' % _tok(shp, 7, ' ').strip('"'),
+        _qstr(_tok(shp, 6, '')),
+        _qstr(_tok(shp, 7, ' ')),
         model.gmstr(r),
     ]))
     out += ['', '//SHIP SYSTEMS\\\\', '//SECTIONS']
@@ -298,7 +327,7 @@ def _section(a, b, c, d, t, cx: float, cy: float,
     colourmod = _tok(b, 12)
     a2 = 'nSec2a,' + ','.join([
         model.gmstr(a.num(1) - cx), model.gmstr(a.num(2) - cy),
-        '"%s"' % a.txt(3),
+        _qstr(a.txt(3)),
         _tok(a, 4, '1'), _tok(a, 5, '1'), _tok(a, 6), _tok(a, 7),
         _tok(a, 9), _tok(a, 10), colourmod,
     ])
@@ -378,17 +407,17 @@ def _mounts(ship: model.Ship, cx: float, cy: float, slot: dict[int, int],
                          cx, cy, slot))
         out.append('nWep2a,' + ','.join([
             _tok(b, 4), _tok(b, 6), _tok(b, 5), _tok(b, 7), _tok(b, 11),
-            '"%s"' % _tok(d, 3, '').strip('"'),
+            _qstr(_tok(d, 3, '')),
             _tok(b, 10), _tok(b, 8), _tok(b, 9), _tok(b, 13), _tok(b, 12),
             _tok(c, 1), _tok(c, 2), _tok(c, 3), _tok(c, 4), _tok(c, 5),
         ]))
         out.append('nWep2b,' + ','.join([
             _tok(a, 4, '1'), _tok(a, 5, '1'), _tok(a, 11), _tok(a, 8, '1'),
             _tok(c, 6), _tok(c, 10),
-            '"%s"' % _tok(c, 8, '-1').strip('"'),
-            '"%s"' % _tok(c, 11, '-1').strip('"'),
+            _qstr(_tok(c, 8, '-1')),
+            _qstr(_tok(c, 11, '-1')),
             _tok(c, 12),
-            '"%s"' % _tok(c, 13, '-1').strip('"'),
+            _qstr(_tok(c, 13, '-1')),
             _tok(c, 14), _tok(c, 15), _tok(d, 1), _tok(d, 2), _tok(d, 4), '0',
         ]))
         t = _trigger_types(wT.get(wid), wid in partners)
@@ -424,7 +453,7 @@ def _tur2(a: model.Record, spr: str, parent: float, arcrange: float,
           depthed: str, cx: float, cy: float, slot: dict[int, int]) -> str:
     p = int(parent)
     return 'nTur2,' + ','.join([
-        model.gmstr(a.num(1) - cx), model.gmstr(a.num(2) - cy), spr,
+        model.gmstr(a.num(1) - cx), model.gmstr(a.num(2) - cy), _ident(spr),
         model.gmstr(gm_mod(a.num(6), 360)),
         model.gmstr(arcrange), depthed,
         str(slot[p]) if p in slot else '-1',

@@ -968,12 +968,69 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                                    force=bool(body.get('force'))))
 
         if p[:1] == ['launch']:
-            return self._json(WINE.launch(body.get('mission')))
+            return self._json(launch(body.get('mission')))
 
         if p[:1] == ['stop']:
             return self._json(WINE.stop())
 
         return self._json({'ok': False, 'why': 'no such endpoint'}, 404)
+
+
+def sync_install():
+    """Rebuild every mission from its YAML and copy the result into the install.
+
+    `build.install` is the half of this that matters and is easy to forget: a
+    `ship:` spawn is loaded by `importShip` from a path relative to the *game*
+    directory, so a design that lives only in the repo does not exist as far as
+    the game is concerned. Installing the GML without the hulls it names is a
+    half-install, and the missing half is silent.
+
+    Cheap enough to do unconditionally — a build is milliseconds and an install
+    is a handful of copies — which is what makes it worth doing on a path that
+    is not an explicit save.
+    """
+    if not os.path.isdir(os.path.join(INSTALL, 'mods')):
+        return {'ok': False, 'why': f'no install at {INSTALL}',
+                'built': [], 'failed': [], 'installed': False}
+    built, failed = [], []
+    for f in mission_files():
+        try:
+            ok = B.build_one(os.path.join(B.MISSIONS, f))
+        except Exception as e:                                       # noqa: BLE001
+            print(f'sync: {f}: {type(e).__name__}: {e}')
+            ok = False
+        (built if ok else failed).append(f[:-5])
+    B.install()
+    return {'ok': not failed, 'built': built, 'failed': failed, 'installed': True}
+
+
+def launch(mission):
+    """Bring the install up to date, then start the game on it.
+
+    A launch used to start whatever the game directory happened to hold, and
+    only an apply ever refreshed it — so the game a session started with was the
+    last apply's build, however old that was. Left as a stale-text problem it
+    would be mild; it is not one. A mission's ship designs are installed by the
+    same step, so a design added since that apply is simply not there: EP9 came
+    up with none of its five Ratline beacons and neither gate battery, an empty
+    lane that reads as a mission bug rather than as an install that was two days
+    behind.
+
+    A mission that does not lint is not installed at all — `build_one` writes no
+    GML on an error — so opening it would come up on the previous build of the
+    very mission being opened. That is the one outcome worth refusing: it is
+    indistinguishable, on screen, from the edit having had no effect.
+    """
+    sync = sync_install()
+    stem = next((m['stem'] for m in mission_list() if m.get('mission') == mission), None)
+    if stem and stem in sync['failed']:
+        return {'ok': False, 'sync': sync,
+                'why': f'{stem} has lint errors, so it was not installed — the game '
+                       f'would come up on the previous build of it. Fix the errors '
+                       f'(the server log names them) and launch again.'}
+    out = WINE.launch(mission)
+    out['sync'] = sync
+    return out
 
 
 def apply(body):

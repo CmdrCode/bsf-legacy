@@ -104,12 +104,55 @@ object_event_add(m, 0, 0,
     '  pend_h = real(file_text_read_string(g)); file_text_close(g);' +
     '} else { pend_w = display_get_width(); pend_h = display_get_height(); }');
 
+// Everything a region rebuild resets, in one place, so Room Start and the Step
+// guard below cannot drift apart.
+//
+// The scaling: -1 = scale up as far as the window allows while keeping the
+// region's own aspect; 0 = do not resize the window to suit.
+//
+// The size: that `0` asks GM not to resize the window, and GM obeys it here --
+// then resizes the window anyway when the NEXT room builds its region, because
+// a fresh region takes the window with it. So a narrow room did not merely
+// pillarbox inside the window the way the header above describes; it shrank the
+// window to the pillarbox. Entering the briefing at 1920x1080 left a 1440x1080
+// window with the desktop showing through where the game had been, and leaving
+// it did not give the size back. Re-asserting the window is what makes the
+// pillarbox live INSIDE the window, which was always the intent.
+//
+// Position is deliberately not touched: GM keeps the top-left corner when it
+// resizes, so restoring the size alone puts the window back exactly where it
+// was. window_center() here would drag a window the player had placed into the
+// middle of the screen on every room change.
+object_event_add(m, 7, 10,
+    'window_set_region_scale(-1, 0);' +
+    'if (cur_w <= 0) exit;' +                    // no resolution applied yet
+    // Borderless fullscreen is options.gml's window, sized to the monitor and
+    // re-asserted by its own watchdog. Two owners would fight every room load,
+    // so this asks that owner to re-assert instead of setting the size here.
+    // Worth asking: the watchdog holds a 60-frame cooldown after each apply, so
+    // left alone it gives the monitor back a full two seconds after the room
+    // shrank the window. mod_fs_apply is its "now, cooldown or not" input.
+    'var fsw;' +
+    'fsw = 0;' +
+    'if (variable_global_exists("mod_fullscreen")) fsw = global.mod_fullscreen;' +
+    'if (fsw) {' +
+    '  if (variable_global_exists("mod_fs_apply")) global.mod_fs_apply = 1;' +
+    '  exit;' +
+    '}' +
+    'if (window_get_width() == cur_w) { if (window_get_height() == cur_h) exit; }' +
+    'window_set_size(cur_w, cur_h);');
+
+// Room Start rather than Step: it runs after the room's region is built and
+// before the first frame of that room is drawn, so the window is never seen at
+// the wrong size. A persistent instance receives it on every room load,
+// room_restart() included.
+object_event_add(m, 7, 4, 'event_user(0);');
+
 object_event_add(m, 3, 0,
-    // Re-asserted on every room change because the drawing region is rebuilt on
-    // every room load, and a rebuilt region comes back at the default scaling.
-    // -1 = scale up as far as the window allows while keeping the region's own
-    // aspect; 0 = do not resize the window to suit.
-    'if (room != lastroom) { lastroom = room; window_set_region_scale(-1, 0); }' +
+    // Kept as the backstop Room Start cannot be: a window manager that meddles
+    // after the room has loaded, and any path that rebuilds the region without
+    // starting a room. Idempotent -- it exits when the window already fits.
+    'if (room != lastroom) { lastroom = room; event_user(0); }' +
     // F11 / shift-F11 cycle. A real build would drive this from the Options
     // screen; the key is here so the feature is usable without touching BSF's UI.
     'if (keyboard_check_pressed(vk_f11)) {' +

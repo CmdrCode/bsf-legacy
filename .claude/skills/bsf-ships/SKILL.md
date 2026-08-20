@@ -166,6 +166,21 @@ follows `bsf-capture`'s posture rather than `bsf-storytelling`'s.
     file, which makes cursor-reading code work exactly once per session and
     silently drop the hull on every replay.
 
+19f. **A `.shp` is compiled, not parsed — in every generation.** `importShip`
+    reads the file and hands the text to `object_event_add(newobj, ev_create, 0,
+    cod)`: the file *is* the new ship object's Create event. sh1 and sh2 go in
+    as they are; sh3 goes through `parseReadParams`, which rebuilds each record
+    as a call (`nSec2a,1,2,…` → `nSec2a(1,2,…)`) and concatenates it into the
+    same string. The CSV generation is a compact *source* encoding — it bought
+    file size and load time, not safety. So a **field** is code, and the format
+    has no escaping: a comma ends the field, a newline ends the record, a quote
+    closes the string, and what follows compiles. `model.FIELD_UNSAFE` names the
+    three characters, `Ship.name` refuses them, and `export._qstr`/`_ident`
+    strip them on the way out — that is the whole of what stands between a
+    hostile `.sb4` and a `.shp` that runs. **The game's own filter is not a
+    backstop** (see REFERENCE.md). Read an outside `.shp` with `ship tree`,
+    which is regex and never evaluates; do not load one to find out what it is.
+
 ### The two things that are not in git
 
 20. **The `.sb4` is source; the game loads the `.shp`.** Sections there are
@@ -182,10 +197,47 @@ follows `bsf-capture`'s posture rather than `bsf-storytelling`'s.
 
 ## Workflow
 
+0. **Start the preview, and give the user the URL.** Do this first, every
+   time, before any inspection or edit — not only when asked, and not only when
+   someone is watching. The whole point of the tool is that the person you are
+   working for can see the hull change under your hands and stop you early.
+
+   ```bash
+   ship serve mods/ships/<the hull>.sb4 &      # background it; it never returns
+   ```
+
+   Then **paste the printed URLs into your reply verbatim.** It prints one per
+   address, already deep-linked to the hull you named:
+
+   ```
+   watching 8 hulls in mods/ships
+     http://127.0.0.1:8771/?ship=0%2Fstation_bolthole.sb4
+     http://100.96.200.11:8771/?ship=0%2Fstation_bolthole.sb4   tailnet — …
+   ```
+
+   The second line appears when Tailscale is up — that is the one to hand over,
+   because it works from a phone or another machine. Never retype or shorten a
+   URL; the `?ship=` key is percent-encoded and a hand-written one will miss.
+   Do not go hunting for the address yourself: `--bind auto` is the default and
+   already listens on loopback *and* the tailnet.
+
+   **Never start a second server.** One covers every hull, and running
+   `ship serve` again on a port that already has one just prints the URL for
+   the hull you named instead of starting anything — so the command above is
+   safe to repeat and is the right way to recover a URL you have lost. If it
+   reports that the running preview does not watch your hull, that server was
+   started against narrower roots; say so rather than starting a rival on
+   another port.
+
 1. **Look first.** `ship tree <file>` for the hierarchy (sections nested,
    mounts listed under their host), `ship render <file> -o out.png --scale 4`
-   then read the PNG. For an interactive view, `ship serve <file>` and leave it
-   running — it watches the file and repaints whoever wrote it, CLI or ShipMaker.
+   then read the PNG. The preview from step 0 is the interactive view — it
+   watches the files and repaints whoever wrote them, CLI or ShipMaker. Bare,
+   it watches `mods/ships` and the game's `Custom Ships` and puts them all in
+   one dropdown; name a file to have it shown first, a directory to watch that
+   instead. The URL carries the hull, `[`/`]` cycle, `0` re-centres, and zoom
+   and pan survive a switch so flipping between two hulls compares them
+   honestly.
 2. **Name what you mean before you touch it.** Write a selector, check it with
    `ship select '<query>' <file> --shot sel.png`, and only then edit. Ids move;
    descriptions do not. Grammar in [REFERENCE.md](REFERENCE.md).
@@ -205,10 +257,16 @@ follows `bsf-capture`'s posture rather than `bsf-storytelling`'s.
    whether a hull looks right — a human caught both a plate overlap and a wrong
    part choice that `check` was perfectly happy with.
 
-When the work is for someone watching, `ship serve --bind <an address they can
-reach>` and
-give them the URL: it repaints on every write, so they can redirect you mid-build
-instead of after it.
+The preview repaints on every write, so whoever holds the URL can redirect you
+mid-build instead of after it. The URL names one hull (`?ship=<key>`) and the
+server holds no selection, so they can browse the dropdown to a different one
+without moving your view, and the link still means the same hull tomorrow. Keys
+resolve only against the current scan, so nothing outside the watched roots is
+reachable from that address.
+
+The tailnet URL reaches your own devices, not the local network — `auto` opens
+two sockets rather than binding the wildcard. For anything wider, or narrower,
+say so: `--bind 0.0.0.0` for the LAN, `--bind 127.0.0.1` for loopback only.
 
 ### Starting a hull from nothing
 
@@ -241,8 +299,13 @@ repo in the cache, so nothing is lost by trying something.
 
 An edit is finished when all of these hold:
 
-- `python3 tools/bsf/roundtrip.py` still reports **175/175** byte-exact.
-- `python3 tools/bsf/selftest.py` reports **0 failed**.
+- `python3 tools/bsf/roundtrip.py` still reports **every file byte-exact** —
+  the total is whatever the install holds (181/181 as of 2026-08-16), so read
+  the failure count, not the total. A count is not a verdict.
+- `python3 tools/bsf/selftest.py` gains no failures. It is not at zero: the
+  pre-existing `doodad sprite resolves -- ['ThrusterEx']` has been failing
+  independently of any edit, so compare against a run on a clean tree rather
+  than against zero.
   (Both read stock ships from the game install, so they need one — the corpus
   they walk is not in this repo.)
 - `ship check` reports nothing new against the baseline — and in particular
