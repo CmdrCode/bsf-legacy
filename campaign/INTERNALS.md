@@ -202,8 +202,78 @@ Two things the mask does *not* promise, both worth knowing before tuning it:
 ## Meteors (`meteors:` in the mission YAML, `meteors: on|off` on a beat)
 
 Alarm 5 on the controller, gated by `global.<id>_meteors`: one `obs_Meteor` per
-firing into a band ahead of the ship (`x + 500..800`, `y ± 400` — one view tall),
-`direction` 150–210 so the rocks come back through it head-on.
+firing, into a band placed just outside the edge of the screen the rocks come in
+by.
+
+```yaml
+meteors:
+  interval: 35              # frames between spawn attempts while on
+  cap: 48                   # max live obs_Meteor — this is the density
+  from: top                 # edge they enter by: right | top | bottom | left
+  spread: 60                # degrees of fan about straight across
+  speed: {min: 1, max: 2.2} # units/step
+  region: {x1: 0, x2: 2830} # rocks are only ever placed inside this
+```
+
+Everything but `region` has a default (`right`, 60, 1–2.2), so a mission that
+writes only `interval` and `cap` gets exactly the field it always had. All of
+them are on the editor's mission sheet (`m`).
+
+### Where a rock is put
+
+Two things decide it, and they are **unioned**: a band `500` ahead of the ship,
+`300` deep and `400` to either side of it — the ship is what the rocks are aimed
+at, and that stays true however the player has moved the camera — and the live
+view rectangle, pushed out by `64`.
+
+**Reading the view is the whole of what keeps a rock from being born on screen.**
+The band's own numbers describe a 1024x768 view and no room is shown at
+1024x768: `mods/resolution.gml` authors every view as `floor(768 * w / h)` by 768
+world units, and `ctr_GUI` scales both by `l_zoom`. At 16:9 the view is 1365
+wide, its half-width is 682, and `x + 500` is *inside the right-hand edge of the
+screen* — rocks used to appear out of nothing in front of the player, worst in
+EP9 where the field is dense. Measured in the mission room at 1920x1080: view
+1365x768, ship at x 260, old band x 760–1060, and no rock in the room had ever
+existed right of x 831.
+
+The 64 is small deliberately. `spr_Meteor` is 32x32 about its centre and
+`image_*scale` tops out at 0.9, so 64 units clears the sprite four times over,
+and every unit past that is off-screen travel that holds a slot against `cap`
+while the player sees nothing. Density is unaffected either way: the population
+saturates at `cap`, and time on screen is a property of the crossing, not of
+where the crossing began.
+
+### `from` and `spread`
+
+`from` names the edge rocks come **in** by, not the way they travel, and
+everything else follows from it: the heading, which axis the band lies along,
+and which side of the view it sits on. `top` is low y — GM7 headings put 90 up
+and room y grows downward — so rocks entering there travel 270, fanned `spread`
+degrees about it (`240..300` at the default 60).
+
+Only the four cardinals are offered. That is a real limit rather than an
+oversight: a diagonal heading wants the band spread across *two* edges in
+proportion to their projected width, or the rocks bunch in the corner between
+them, and no mission has asked for that.
+
+### `region`
+
+The stretch of room the field may fall in. Perpendicular to the drift it is
+exact — it is where along the edge rocks may appear, and when the view stops
+overlapping it the span goes empty and the field dries up on its own.
+
+**Along** the drift it cannot be exact, and does not pretend to be: the band's
+position on that axis is precisely what keeps a spawn off-screen, so it is not
+the author's to move. There the region is applied to the *view* instead — no
+rocks at all while the player is looking somewhere the region does not reach.
+
+A corner left out is the room's own edge, so a mission constrains only what it
+means to; EP9 writes `{x1: 0, x2: 2830}` and takes the room for y. Only the
+halves that can actually bite are emitted — a clip against the room edge is a
+test that cannot fail, and one sitting in the generated file would read like a
+rule.
+
+### `cap`, `interval` and `speed`
 
 **`cap` is the density; `interval` is only the refill rate.** A rock lives until
 it leaves the room — `obs_Meteor`'s Alarm 2 divides the distance to the edge by
@@ -219,7 +289,228 @@ The mission's own spawn overrides `direction`, `speed` and `image_*scale` after
 `instance_create`; that lands before Alarm 2 first runs, so the lifetime is
 computed from the mission's velocity and not from `obs_Meteor`'s own random one.
 
-## Interference (`interference: on|off` on a beat)
+## Editing all of this
+
+Every block and every beat verb below is editable in `tools/editor`, and that is
+load-bearing rather than a convenience: **the editor rewrites the whole mission
+file from its parsed model on every save, so anything its writer does not emit
+is deleted.** `Core.toYaml` therefore writes each of them whether or not a panel
+exists for it, and `Core.lint` mirrors `build.py`'s checks so the editor refuses
+what the build would reject.
+
+The mission blocks — `bounds:` and `surge:` — live in the mission sheet (`m`),
+alongside `meteors:`. The beat verbs — `controls:`, `surge:`, `bounds:` — are
+cards in the rail and icons on the beat track, so a beat that takes the helm
+away or lights the wall says so where it happens. The map draws the camera
+limit as the strip it forbids and the wall as the line it parks on; both are
+otherwise invisible until the mission is played.
+
+A save is a fixed point: the file the editor writes is the file it writes again.
+That was not true until `reattach_comments` stopped padding with `ljust(22)` —
+on a line already 22 wide it is a no-op, the `#` landed flush against the value,
+`_split_comment` then refused to read it as a comment (it requires whitespace
+before the `#`), and the next save put the space back. The file alternated
+between the two forms forever. Pad to 21 and spell the space, exactly as
+`Core.toYaml`'s `pad()` does.
+
+## The camera limit (`bounds:`, and `bounds: on|off` on a beat)
+
+```yaml
+bounds: {x2: 3600}
+```
+
+How far right the camera may look. Clamped with BSF's own room-edge expression —
+`bx2 + GUI_MinimapSize * l_zoom - view_wview[0]` — so a bound behaves exactly
+like a room that got shorter, discounting the minimap column the same way. That
+is what makes the *clear battlefield* stop on the line rather than the view
+rectangle. Measured at 1920x1080: the camera shoved to x 5000 lands with its
+clear right edge on 3600.00, and on 5600 (the room) with the bound off.
+
+Two ⚠ that cost a build each:
+
+* **Published as a delta**, `view_xview[0] += blim - l_viewx`, never as an
+  assignment. `view_xview[0]` also carries the frame's screen shake, and
+  assigning would silently cancel it — the same reason `mods/aspect.gml` does it
+  this way.
+* **Both hooks ask what room they are in.** `ctr_GUI` lives in every battle
+  room, so without `if (room = global.act2_roomN)` a mission that ended with the
+  bound up would clamp the next skirmish's camera and fog its minimap.
+
+The hook is appended to `ctr_GUI` **once per session**, guarded by a global,
+because `object_event_clear` on a stock object would take the game's own camera,
+HUD anchoring and `aspect.gml` with it. Everything it does is read from globals,
+so a re-apply is still free to change the numbers.
+
+### The minimap half
+
+Without it the limit hides nothing: `ctr_GUI` blips every `ctr_Ship` in the
+room, so a station the camera cannot reach is still a cluster of squares in the
+corner. A black rectangle past the same line, with the boundary drawn in the
+minimap's own green, lifts on the same beat. It is also what stops the limit
+reading as a bug — a camera that silently refuses to pan is broken; one that
+stops at a line the map draws is a door.
+
+⚠ The rect is **re-derived**, not read off `ctr_GUI`. `mapx1`/`mapx2`/`mapsizew`
+are ctr_GUI instance variables in the stock source and reading them from an
+appended Draw action is still `Unknown variable mapx1`, 1321 times in one
+sitting. The minimap is `GUI_MinimapSize * global.l_zoom` square in the view's
+top-right corner and a world x lands at that fraction of it; that needs nothing
+but the view and the room.
+
+## The helm lock (`controls: on|off` on a beat)
+
+Takes the ship and the camera away for a scripted stretch. EP9 opens with it
+off: three beats set the scene — the nav computer, Helm on the storm wall, the
+hint about cells and rocks — and none of them are worth reading while the player
+is already flying away from them. It is handed back in the same beat as the
+objective that says what to do with it.
+
+* **The ship** stops being selectable (`l_myship = 0`), which is what stops
+  orders: the game's own selection loop tests `if !l_myship then continue`.
+  Any selection already made is dropped with `l_numselected = 0`, or the player
+  keeps the ship they clicked before the lock came on. The End Step then also
+  runs the engine's own **Stop Action** — the one the `S` key runs — on the
+  hull every frame the helm is locked: `l_movetox`/`l_movetoy` to the hull's
+  own position, `l_faceto = -1`, `l_target`/`l_facetarg` to `-4`, `alarm[8] = 0`
+  and `l_holdposition = true`. That is belt-and-braces: selection is the gate
+  every order path goes through, but a lock resting on one flag on one instance
+  is one missed path from being no lock at all, and the failure is invisible
+  until someone flies out of a cutscene. `l_holdposition` is released by the
+  unlock, which is the only place that can clear it.
+
+  ⚠ **A cleared move order is `l_movetox = x`, not `l_movetox = -4`.**
+  `l_movetox > -4` is only how the engine *tests* for a live order; the value
+  itself is a world coordinate, so writing `-4` does not clear the order, it
+  issues one to the room's top-left corner — and `l_holdposition` does not stop
+  a ship that already has somewhere to be. EP9's Hestia flew from (260, 1000)
+  to the corner during its own locked introduction. Every place the engine
+  wants a hull to stay put writes the hull's own position (`obj.l_movetox =
+  obj.x`), which cannot move anything.
+* **The camera** is pinned by the same appended `ctr_GUI` End Step as the limit.
+
+  ⚠ **The pin latches from the live camera, never from a stored number.** It
+  used to read `global.<gid>_clx`, which the load-time guard initialises to 0 —
+  so a room that *starts* locked pinned the view to the room's own top-left
+  corner and held it there. EP9 opens with `centreCamera(260, 1000, 0)` in
+  Create and the player saw a patch of cloud 1000 units above the ship: the pin
+  undid the centring on the very next End Step, every frame, for the whole
+  introduction. The camera limit's own `bounds:` block was never involved, which
+  is why the symptom looked like a mission-geometry problem rather than a lock.
+
+  `<gid>_cll` is the latch. `0` means *tracking* — follow the camera wherever it
+  goes and do not pin — and it is cleared on mission entry and by every
+  `camera:` verb. Tracking ends the first frame no `GUI_CamMover` exists, which
+  is what makes one rule cover both kinds of scripted move: `speed: 0` is
+  instant and latches immediately, a slow pan keeps tracking until the mover
+  dies and then latches on the destination. Releasing the lock leaves the camera
+  where the script put it rather than snapping back.
+* Zoom is deliberately not pinned. It changes what you see without letting you
+  go anywhere, and pinning it would fight the reveal.
+
+Whether the room *starts* locked is read off the opening beat rather than given
+a key of its own: `alarm[2]` does not fire for 45 frames, and a mission that
+opens `controls: off` must not leave a second and a half in which the player can
+fly out of the shot.
+
+⚠ `mods/editor.gml` has a camera hold of its own, and it used to make exactly
+the same mistake this pin did: it re-asserted `ed_camx` every End Step while the
+pointer was outside the game window, and `ed_camx` starts at 0 — so a room
+entered with the pointer elsewhere was held at the room's top-left corner, which
+is indistinguishable from the mission bug above. It now **adopts** rather than
+imposes, on two rules: a room it has not seen before, and any single-frame jump
+larger than `scrollspeed * zoom * 2` (edge scroll — the runaway the hold exists
+to stop — can never move further than that in a frame, and an instant
+`centreCamera(x, y, 0)` makes no `GUI_CamMover` for the older test to catch).
+Both the pin and the limit can now be tested with the pointer anywhere.
+
+## The storm wall (`surge:`, and `surge: on|off` on a beat)
+
+```yaml
+surge:
+  back: 900     speed: 1.2    gap: 500     slack: 800
+  rush: 2.2     stop: 3280    dmg: 2.5     shield: 88
+```
+
+A front that advances in +x from `back` behind the ship, filling real mask cells
+to a third level as it crosses them, so it damages through the same array read
+and the same `damage()` path as the painted field — at `dmg` rather than 0.3.
+Measured: a parked ship at 55% hull loses all six sections in **2.4 s**, and the
+mission fails through the shipped path (`MISSION FAILED — your ship was
+destroyed`), so there is no hulk and no soft-lock.
+
+**`speed` is a floor, never a rate.** The front never advances slower, so a ship
+that stops is always caught and the wall is never seen *waiting* — the tell that
+gives rubber-banding away. Past `slack` it closes at `rush` times speed until
+the gap is back to `gap`; that is the whole of what keeps it in frame for a fast
+player.
+
+**`stop` is set by the cutscene, not by the scenery.** Reaching the last beacon
+fires a dialogue sequence the player cannot fly out of, so the wall has to park
+before the ship can be pinned in it. The gate fires within 100 units of the
+beacon, so in EP9 the earliest the scene can start is x 3020 and a hull sitting
+there reaches back to about 2945; `stop: 2900` leaves the wall at your heels
+through the whole exchange and unable to touch you during it. Verified in the
+room: the front parks on 2900, the cell under the beacon and the cell under the
+trigger ring both read clear, and 2890 reads wall.
+
+Gas is spawned per filled cell at the mask's own density and marked `l_wall`, so
+the front can cull its own puffs 1500 behind itself without touching the
+painted field's. Every puff carries the marker — including the painted ones,
+set to 0 in the puff's Create — because the cull's `with` reads it on all of
+them and reading an undefined variable aborts the action.
+
+### Beacon shields
+
+The wall would sweep the dead beacons, and the storm already spares them for
+free (its Step filters `if (l_owner = global.<id>_ship)` — only the player is
+ever damaged). The shields make that visible rather than mysterious.
+
+**They are not part of the surge, and must not be.** Rocks arrive three beats
+before the wall does, and a shield that cannot flare until the storm lights it
+is a shield the player never sees do its job — which is exactly how the first
+build shipped. The rock-stopping loop is standing machinery in the storm Step:
+from the first frame, any `obs_Meteor` entering a bubble is destroyed and that
+shield flares for `FLARE` frames.
+
+`shon` is only the **steady** state — the storm having reached that beacon — and
+the fill skips cells inside a lit bubble so the gas parts around it. The two
+combine in the draw: a dormant shield draws *nothing*, a rock strike is a flash
+that fades, and a beacon the storm has reached glows continuously and flashes on
+top of that.
+
+Drawn from the controller (depth -9) rather than the storm object (700), so the
+bubble reads as being in front of the gas parting around it. A rim, not a disc:
+`draw_circle_color` with a black centre under `bm_add` contributes nothing in
+the middle and everything at the edge — the game's own shield idiom.
+
+Three ⚠, one per failed build:
+
+* **`draw_circle_color`, not `_colour`.** GM7's drawing API is American
+  throughout, and an unknown function is a *compilation* error that fails the
+  entire code action: the first build drew no bolt, no interference and no
+  shields, and the mission room never finished loading. `Emitter.check_calls`
+  now fails the build on any call the game itself never makes. It strips
+  line-start `//` comments before scanning, and only those: the section header
+  `// the helm lock (camera half)` otherwise matches the call pattern and fails
+  the build on a function named `lock` — which is what it did the first time a
+  mission used `controls:` without `bounds:`. Comments are stripped at line
+  start only because dialogue is emitted as quoted strings on their own lines,
+  and a blanket strip would eat the rest of any line of prose containing `//`,
+  turning the gate silently into a pass. String *contents* are still scanned,
+  and must be: the appended-event code lives inside `'...'` and is compiled.
+* **Set alpha before each draw.** Alpha is global draw state, not an argument,
+  so the fill inherited the 1.0 left by the previous draw and put an opaque
+  milky ball over the beacon it was protecting.
+* **48-segment circles.** GM7 draws 24 by default, which at this radius is a
+  visible polygon.
+
+## Interference (`interference:` on a beat)
+
+```yaml
+interference: on                        # both targets
+interference: off                       # neither
+interference: {ships: off, clouds: on}  # EP9 at Bolthole
+```
 
 Stock `ctr_Mission3`'s Draw event, lifted into a verb: while it is on, every
 `ter_Nebula` is redrawn additively with `image_alpha + random(0.4)` and every
@@ -227,6 +518,29 @@ Stock `ctr_Mission3`'s Draw event, lifted into a verb: while it is on, every
 position. `l_emp = 0.4` in the stock mission is dead — nothing ever reads it —
 so the "jump systems are down" is fiction and the distortion is the whole of
 what the effect actually was.
+
+**Two targets, because they are two statements.** `clouds` is the weather — the
+nebula redraw, and the storm's own gas with it — and `ships` is the hull echo,
+the only stock effect in the game that makes the *player* look wrong, which is
+why the effect reads as interference and not as weather. Arriving somewhere safe
+is exactly where they part company: the instruments clear, the storm outside
+does not stop. EP9 turns `ships` off at Bolthole and leaves `clouds` running,
+which is why the yard is drawn crisp against a sky that is still flaring.
+
+They compile to a flag each — `<gid>_interf` for ships, `<gid>_interfc` for
+clouds — and the Draw guards the two halves separately. `on`/`off` set both,
+which is the whole vocabulary the verb had while the effect was one thing, so
+every mission written against it keeps meaning what it meant.
+
+⚠ **A block is the complete state, not a diff**: a target it does not name is
+off, so `{ships: off}` stops the weather too. Both linters warn on an incomplete
+block rather than letting that be silent — a beat says what the effect *is*
+after it, never what it changed, and that is worth one warning to keep.
+
+In `tools/editor` the card is a checkbox per target rather than an on/off
+select, and the writer emits the shortest form that says it: a scalar when the
+targets agree, the block when they do not. Ticking both gives back the plain
+`interference: on` an author would have typed.
 
 Emitted into the controller's **Draw (`8:0`)**, with the controller's depth set
 to `-9` to match `ctr_Mission3`. The lightning bolt is drawn from there too:

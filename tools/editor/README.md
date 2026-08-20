@@ -10,7 +10,8 @@ python3 tools/editor/server.py --fullscreen     # give the game the whole monito
 
 A puppetted game is a second screen, not the thing you are looking at, so the
 editor launches it **windowed at 1920×1080** rather than covering the monitor the
-editor is on. Two things make that work, and both are worth knowing about.
+editor is on. Three things make that work, and all of them are worth knowing
+about.
 
 **The display settings are borrowed, not taken.** `mods/res.cfg` and
 `mods/mode.cfg` are the *player's* — the game rewrites them itself whenever
@@ -30,6 +31,15 @@ prefix still asks for a 3840×2160 desktop and the capture runbook depends on
 that, so the editor stays out of it. `--prefix PATH` overrides. The startup
 banner always prints which prefix is in use and whether it carries a desktop.
 
+**The server hands wine its own `DISPLAY`**, so the editor has to be started
+from the desktop session it is meant to draw on. Start it from somewhere that
+carries a different one — another session, a detached shell, an agent — and
+every launch dies in the wine loader before the game exists, with
+`wine: Unhandled exception 0x0eedfade`. `launch` names it now: the API waits to
+see whether the child is still there a moment after the spawn and, if it is not,
+answers with wine's own last line and the `DISPLAY` it used, rather than
+reporting the spawn as a success. `/tmp/bsf_editor_run.log` has the rest.
+
 Ground truth comes from the game, not the window manager: the state line carries
 `win=`, `region=` and `fs=`. The **region** is the drawing buffer, and only it
 distinguishes a native 1080p render from an upscale — a window manager reports
@@ -42,6 +52,12 @@ finished. `mods/editor.gml` undoes that scroll while the pointer is outside the
 game's client area, and yields to the arrow keys and to `centreCamera`'s own
 glide. Put the pointer over the game and edge-scrolling works exactly as it does
 for a player.
+
+It **adopts** the camera rather than imposing on it: a room it has not seen
+before, and any single-frame jump bigger than one edge-scroll step, are taken as
+given. Without those two rules the hold started every room at (0, 0) — a mission
+whose own opening `centreCamera` put the view somewhere else was dragged to the
+room corner and held there, which reads as a mission bug and is not one.
 
 **The storm is painted, and the brush is on the map.** A mission's storm is one
 mask over the room — `.` clear, `#` damaging, `@` hot, one character per 50
@@ -199,9 +215,27 @@ The map draws a placed design from the same draw list `tools/bsf`'s renderer and
 **The mission sheet** (`m`) is everything in the file that is not a beat: the
 title and subtitle, the **room's width and height**, its caption, where the
 player starts and how damaged, the message shown when the ship is lost, the
-nebula count and the meteor spawner's numbers. The room is the world — every
-coordinate in the mission is measured against it, and the view stays 1024×768
-and scrolls over it.
+nebula count, the meteor spawner's settings, the **camera limit** and the
+**storm wall**. The room is the world — every
+coordinate in the mission is measured against it, and the view scrolls over it:
+768 world units tall and as wide as the display's aspect makes it, which is 1365
+at 16:9 and more again zoomed out. Rooms are authored 1024×768 and no room is
+ever *shown* at 1024×768 — `mods/resolution.gml` rewrites every port at startup,
+and assuming otherwise is what had EP9's meteors spawning on screen.
+
+The camera limit (`bounds: x2`) is how far right the view may look, clamped
+exactly as the room's own right edge clamps it — the ship may still fly past it,
+only the camera stops. Set it and the mission *starts* clamped, so the beat that
+names it is normally the one that turns it **off**: that is what a reveal is.
+
+The storm wall (`surge:`) is lit by a beat and is made of the storm — no painted
+mask, no wall. Its eight settings are the one part of the sheet where **blank
+means the compiler's default**, shown greyed in the box: every surge key already
+has a default that behaves, so typing one writes one, and a file saying
+`speed: 1.6` and nothing else is a file whose author changed the speed. That is
+worth being able to read off the mission. Clearing the last field of either
+block removes the block rather than leaving `surge:` with nothing under it,
+which the compiler rejects.
 
 The size is the one field in the editor that applies on **commit** (blur or
 Enter) rather than per keystroke: the storm mask is sized from it, and typing

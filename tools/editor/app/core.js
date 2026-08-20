@@ -168,15 +168,108 @@ window.Core = (function () {
      DEFAULTS is build.py's METEORS — the same two numbers on the other side of
      the wire, and they want changing together. */
   const Meteors = {
-    DEFAULTS: { interval: 240, cap: 8 },
+    DEFAULTS: { interval: 240, cap: 8, from: 'right', spread: 60, speed: { min: 1, max: 2.2 } },
+    // `region` is absent here exactly as it is absent from build.py's METEORS:
+    // it is the one setting whose presence changes the emitted GML, so ensure()
+    // must never conjure one the author did not ask for.
     ensure(m) {
-      if (!m.meteors) m.meteors = Object.assign({}, Meteors.DEFAULTS);
-      // A block that names one of the two is legal in the file; the compiler
-      // defaults the other, so the sheet must show the same value it will get.
+      if (!m.meteors) m.meteors = {};
+      // A block that names some of these is legal in the file; the compiler
+      // defaults the rest, so the sheet must show the same values it will get.
       for (const k in Meteors.DEFAULTS) {
-        if (m.meteors[k] == null) m.meteors[k] = Meteors.DEFAULTS[k];
+        const d = Meteors.DEFAULTS[k];
+        if (d && typeof d === 'object') {
+          // Copied, never shared. Assigning the literal would leave the sheet
+          // typing straight into DEFAULTS, and every mission opened afterwards
+          // in the same tab would inherit the last one's speeds.
+          if (m.meteors[k] == null) m.meteors[k] = Object.assign({}, d);
+          else for (const j in d) if (m.meteors[k][j] == null) m.meteors[k][j] = d[j];
+        } else if (m.meteors[k] == null) m.meteors[k] = d;
       }
       return m.meteors;
+    },
+    // build.py's METEOR_EDGES, by name. The editor needs the set to check
+    // `from` against; the heading that follows from each is the compiler's
+    // business and is deliberately not restated here.
+    EDGES: { right: 1, top: 1, bottom: 1, left: 1 },
+    /* build.py's meteor_region(): the rect with any corner the author left out
+       taken from the room, or null when there is no region — which `region: {}`
+       also is, that being what the sheet leaves behind when the last corner is
+       cleared. */
+    rect(m) {
+      const r = m.meteors && m.meteors.region;
+      if (!r || !Object.keys(r).length) return null;
+      const num = (v, d) => (typeof v === 'number' ? v : d);
+      return { x1: num(r.x1, 0), y1: num(r.y1, 0),
+        x2: num(r.x2, m.room.width), y2: num(r.y2, m.room.height) };
+    },
+  };
+
+  /* `surge:` — the advancing wall of storm — and `bounds:` — how far the camera
+     may look. Two blocks rather than one because they are independent: EP9 uses
+     both, and either works alone.
+
+     DEFAULTS is build.py's SURGE table verbatim, and like Meteors.DEFAULTS the
+     two want changing together. `stop` is the one that cannot sit in the table
+     as a number: `null` there means *the room's own right edge*, so it resolves
+     against the room and not against a constant. There is no `ensure` on
+     purpose — unlike a meteor field, every surge key already has a compiler
+     default that behaves, so the sheet shows the defaults as placeholders and
+     writes only what an author actually types. That keeps a file saying the one
+     number it meant to say instead of all eight. */
+  const Surge = {
+    DEFAULTS: { back: 900, speed: 1.2, gap: 500, slack: 800, rush: 2.2, stop: null, dmg: 2.5, shield: 88 },
+    // Emission order, which is also the order the sheet and the writer use.
+    KEYS: ['back', 'speed', 'gap', 'slack', 'rush', 'stop', 'dmg', 'shield'],
+    // `{}` is not a surge, for the same reason `region: {}` is not a region —
+    // build.py's `if self.surge` reads an empty block as no block at all.
+    any: (m) => !!(m.surge && Object.keys(m.surge).length),
+    at(m) {
+      const s = Object.assign({}, Surge.DEFAULTS, m.surge || {});
+      if (s.stop == null) s.stop = m.room.width;
+      return s;
+    },
+    // The camera's right limit, or null when the mission does not set one. Only
+    // the right edge exists because only the right edge has been needed.
+    limit: (m) => (m.bounds && typeof m.bounds.x2 === 'number' ? m.bounds.x2 : null),
+  };
+
+
+  /* `interference:` — what the storm is allowed to distort, mirroring build.py's
+     INTERF_TARGETS and Emitter.interf_state.
+
+     Two targets because they are two statements: `clouds` is the weather and
+     `ships` is the hull echo, the only stock effect in the game that makes the
+     *player* look wrong. Arriving somewhere safe is where they part company —
+     the instruments clear while the storm outside does not stop.
+
+     ⚠ A block is the COMPLETE state, so a target it does not name is off. The
+     lint warns about it rather than letting a `{ships: off}` quietly stop the
+     weather too. */
+  const Interf = {
+    TARGETS: ['ships', 'clouds'],
+    state(v) {
+      const out = {};
+      if (v && typeof v === 'object') Interf.TARGETS.forEach((k) => { out[k] = onoff(v[k]) === 'on'; });
+      else { const on = onoff(v) === 'on'; Interf.TARGETS.forEach((k) => { out[k] = on; }); }
+      return out;
+    },
+    // The shortest form that says it: a scalar when the targets agree, a block
+    // when they do not. Writing `{ships: on, clouds: on}` where `on` would do
+    // makes the file longer and no clearer, and it is what an author typed
+    // before the targets existed.
+    write(v) {
+      const st = Interf.state(v);
+      if (Interf.TARGETS.every((k) => st[k])) return 'on';
+      if (Interf.TARGETS.every((k) => !st[k])) return 'off';
+      return '{' + Interf.TARGETS.map((k) => `${k}: ${st[k] ? 'on' : 'off'}`).join(', ') + '}';
+    },
+    label(v) {
+      const st = Interf.state(v);
+      const on = Interf.TARGETS.filter((k) => st[k]);
+      if (!on.length) return 'clear';
+      if (on.length === Interf.TARGETS.length) return 'nebula flare + hull distortion';
+      return on[0] === 'ships' ? 'hull distortion only' : 'nebula flare only — hulls read clean';
     },
   };
 
@@ -241,12 +334,17 @@ window.Core = (function () {
     // the beat does. It earns an icon anyway — a beat carrying reasoning nobody
     // can see from the track is a note nobody will read.
     if (b.note != null) push('note', '✎', 'note', noteText(b.note).split('\n')[0] || 'empty');
+    // The helm lock. It reads as nothing on the map and everything in play, so
+    // the track is the only place it can be seen at all — a beat that takes the
+    // ship away from the player and does not say so is the kind of thing an
+    // author only finds by wondering why the controls are dead.
+    if (onoff(b.controls) === 'off') push('controls', '⊘', 'controls', 'helm locked — no orders, camera pinned');
+    else if (onoff(b.controls) === 'on') push('controls', '⊘', 'controls', 'helm returned');
     if (b.music === 'stop') push('music', '♫', 'music', 'stop');
     else if (b.music) push('music', '♫', 'music', String(b.music));
     if (onoff(b.eerie) === 'on') push('eerie', '◌', 'ambience', 'snd_eeriesound loop');
     else if (onoff(b.eerie) === 'off') push('eerie', '◌', 'ambience', 'stop eerie');
-    if (onoff(b.interference) === 'on') push('interference', '≋', 'interference', 'nebula flare + hull distortion');
-    else if (onoff(b.interference) === 'off') push('interference', '≋', 'interference', 'clear');
+    if (b.interference != null) push('interference', '≋', 'interference', Interf.label(b.interference));
     if (b.autosave) push('autosave', '◉', 'autosave', 'unless difficulty = Hard');
     if (b.camera) push('camera', '▣', 'camera', `(${b.camera.x}, ${b.camera.y}) speed ${b.camera.speed == null ? 60 : b.camera.speed}`,
       { type: 'camera', x: b.camera.x, y: b.camera.y });
@@ -262,6 +360,15 @@ window.Core = (function () {
     }
     if (onoff(b.meteors) === 'on') push('meteors', '✦', 'meteors', 'spawner on');
     else if (onoff(b.meteors) === 'off') push('meteors', '✦', 'meteors', 'spawner off');
+    // Both carry their geometry in a mission-level block, so the detail line is
+    // where the beat's flag and that block get shown together — the one place
+    // the arrangement is legible without opening the sheet.
+    if (onoff(b.surge) === 'on')
+      push('surge', '▚', 'storm wall', `lights ${Surge.at(m).back} behind the ship, parks at x ${Surge.at(m).stop}`);
+    else if (onoff(b.surge) === 'off') push('surge', '▚', 'storm wall', 'stops advancing');
+    if (onoff(b.bounds) === 'on')
+      push('bounds', '⊣', 'camera limit', Surge.limit(m) == null ? 'on — but no bounds: x2 to stop at' : `the view stops at x ${Surge.limit(m)}`);
+    else if (onoff(b.bounds) === 'off') push('bounds', '⊣', 'camera limit', 'lifted — the reveal');
     if (b.objective != null) push('objective', '▶', 'objective', b.objective);
     if (b.say) push('say', '▰', 'say', b.say.who);
     if (b.gate != null && m.gates[b.gate]) push('gate', '◇', 'gate', `beacon ${b.gate + 1} (${m.gates[b.gate].x}, ${m.gates[b.gate].y})`,
@@ -278,9 +385,17 @@ window.Core = (function () {
   // ------------------------------------------ cumulative state at beat i
   function stateAt(m, upTo) {
     const st = {
-      spawns: [], gatesDone: [], activeGate: null, meteors: false, interference: false,
+      spawns: [], gatesDone: [], activeGate: null, meteors: false,
+      interference: { ships: false, clouds: false },
       music: null, eerie: false, camera: { x: m.player.x, y: m.player.y },
       objective: null, say: null, saves: 0, won: false,
+      // The three that do not start at "off". The camera limit is re-asserted
+      // on every mission entry by the compiler's Create block, so a mission
+      // carrying `bounds:` at all begins clamped — no beat has to turn it on,
+      // and the beat that names it is the one that lifts it. The helm starts
+      // free, and beat 0's own `controls:` is read by the loop below like any
+      // other beat, which is also how build.py decides the Create-time state.
+      bounds: Surge.limit(m) != null, surge: false, controls: true,
     };
     for (let i = 0; i <= Math.min(upTo, m.beats.length - 1); i++) {
       const b = m.beats[i];
@@ -289,8 +404,13 @@ window.Core = (function () {
       if (onoff(b.eerie) === 'off') st.eerie = false;
       if (onoff(b.meteors) === 'on') st.meteors = true;
       if (onoff(b.meteors) === 'off') st.meteors = false;
-      if (onoff(b.interference) === 'on') st.interference = true;
-      if (onoff(b.interference) === 'off') st.interference = false;
+      if (b.interference != null) st.interference = Interf.state(b.interference);
+      if (onoff(b.bounds) === 'on') st.bounds = true;
+      if (onoff(b.bounds) === 'off') st.bounds = false;
+      if (onoff(b.surge) === 'on') st.surge = true;
+      if (onoff(b.surge) === 'off') st.surge = false;
+      if (onoff(b.controls) === 'on') st.controls = true;
+      if (onoff(b.controls) === 'off') st.controls = false;
       if (b.autosave) st.saves++;
       if (b.camera) st.camera = { x: b.camera.x, y: b.camera.y };
       (b.spawn || []).forEach((sp) => st.spawns.push(sp));
@@ -307,7 +427,8 @@ window.Core = (function () {
   // ---------------------------------------------------------------- the lint
   // Same rules build.py enforces; the editor should never let you author past them.
   const BEAT_KEYS = ['note', 'start', 'say', 'objective', 'gate', 'gate_at', 'wait', 'autosave',
-    'music', 'eerie', 'meteors', 'camera', 'spawn', 'ping', 'win', 'exec', 'interference'];
+    'music', 'eerie', 'meteors', 'camera', 'spawn', 'ping', 'win', 'exec', 'interference',
+    'bounds', 'surge', 'controls'];
 
   /* `note:` — why this beat is the way it is, carried *as data*.
    *
@@ -531,6 +652,102 @@ window.Core = (function () {
         if (bad) errs.push({ where: `storm.mask row ${r}`, msg: `'${bad[0]}' is not one of . # @` });
       });
     }
+    // build.py's check_meteors. Worth mirroring rather than leaving to the save
+    // because the mission sheet types straight into these: `from` is a free text
+    // field, and a region is four numbers that are trivial to get the wrong way
+    // round. Every one of them is silent in the game — a bad `from` emits a
+    // heading of `undefined`, which is a GM7 syntax error and therefore an event
+    // that simply never runs.
+    if (m.meteors) {
+      const mt = m.meteors, W = m.room.width, H = m.room.height;
+      Object.keys(mt).forEach((k) => {
+        if (k !== 'region' && Meteors.DEFAULTS[k] === undefined)
+          errs.push({ where: 'meteors', msg: `unknown key '${k}'` });
+      });
+      if (mt.from != null && !Meteors.EDGES[mt.from])
+        errs.push({ where: 'meteors', msg: `from '${mt.from}' is not one of `
+          + `${Object.keys(Meteors.EDGES).join(' | ')} — it names the screen edge the `
+          + 'rocks come IN by, not the way they travel' });
+      if (mt.spread != null && !(mt.spread >= 0 && mt.spread <= 180))
+        errs.push({ where: 'meteors', msg: `spread ${mt.spread} is outside 0-180 degrees` });
+      if (mt.speed) {
+        const lo = mt.speed.min == null ? Meteors.DEFAULTS.speed.min : mt.speed.min;
+        const hi = mt.speed.max == null ? Meteors.DEFAULTS.speed.max : mt.speed.max;
+        Object.keys(mt.speed).forEach((k) => {
+          if (k !== 'min' && k !== 'max')
+            errs.push({ where: 'meteors.speed', msg: `unknown key '${k}' (min, max)` });
+        });
+        if (!(lo > 0)) errs.push({ where: 'meteors.speed', msg: `min ${lo} must be above 0` });
+        else if (hi < lo) errs.push({ where: 'meteors.speed', msg: `max ${hi} is below min ${lo}` });
+      }
+      const r = Meteors.rect(m);
+      if (r) {
+        Object.keys(mt.region).forEach((k) => {
+          if (['x1', 'y1', 'x2', 'y2'].indexOf(k) < 0)
+            errs.push({ where: 'meteors.region', msg: `unknown key '${k}' (x1, y1, x2, y2)` });
+        });
+        if (r.x2 <= r.x1 || r.y2 <= r.y1)
+          errs.push({ where: 'meteors.region', msg: `(${r.x1}, ${r.y1}) to (${r.x2}, ${r.y2}) `
+            + 'is inside out or empty — no rock can ever be placed in it' });
+        else if (r.x1 > W || r.y1 > H || r.x2 < 0 || r.y2 < 0)
+          errs.push({ where: 'meteors.region', msg: `(${r.x1}, ${r.y1}) to (${r.x2}, ${r.y2}) `
+            + `is outside the ${W}×${H} room` });
+      }
+    }
+    /* build.py's check_bounds_surge. Every one of these fails *silently* in the
+       game rather than loudly: a bound past the room clamps nothing and reads
+       as a feature that was never wired up, a wall with no storm to be made of
+       never advances, and a `stop` behind where the front lights leaves a wall
+       already parked before it is lit. None of the three announces itself, so
+       none of them is findable by playing — which is what makes them worth the
+       duplication here. */
+    // build.py's interference block check, including the warning that a block
+    // is the complete state — the one thing about this verb that can surprise.
+    m.beats.forEach((b, i) => {
+      const v = b.interference;
+      if (v == null || typeof v !== 'object') return;
+      Object.keys(v).forEach((k) => {
+        if (Interf.TARGETS.indexOf(k) < 0)
+          errs.push({ where: `beat ${i}`, msg: `interference: unknown target '${k}' (${Interf.TARGETS.join(', ')})` });
+        else if (['on', 'off'].indexOf(String(onoff(v[k]))) < 0)
+          errs.push({ where: `beat ${i}`, msg: `interference: ${k} must be on|off` });
+      });
+      const missing = Interf.TARGETS.filter((k) => !(k in v));
+      if (missing.length)
+        warn(`beat ${i}`, `interference names ${Interf.TARGETS.filter((k) => k in v).join(', ')} `
+          + `but not ${missing.join(', ')}, and a block is the complete state — so `
+          + `${missing.join(' and ')} will be OFF after this beat. Say it outright if that is what you mean`);
+    });
+    if (m.bounds != null) {
+      const W = m.room.width;
+      Object.keys(m.bounds).forEach((k) => {
+        if (k !== 'x2') errs.push({ where: 'bounds', msg: `unknown key '${k}' (x2)` });
+        else if (typeof m.bounds[k] !== 'number') errs.push({ where: 'bounds', msg: `${k} '${m.bounds[k]}' is not a number` });
+      });
+      const x2 = Surge.limit(m);
+      if (x2 != null) {
+        if (x2 >= W) warn('bounds', `x2 ${x2} is at or past the room's own right edge (${W}), so it clamps nothing`);
+        else if (x2 < m.player.x)
+          errs.push({ where: 'bounds', msg: `x2 ${x2} is left of the player start (${m.player.x}) — the ship begins outside the camera's reach` });
+      }
+    }
+    if (m.surge != null) {
+      const W = m.room.width;
+      Object.keys(m.surge).forEach((k) => {
+        if (Surge.KEYS.indexOf(k) < 0) errs.push({ where: 'surge', msg: `unknown key '${k}' (${Surge.KEYS.slice().sort().join(', ')})` });
+        else if (typeof m.surge[k] !== 'number') errs.push({ where: 'surge', msg: `${k} '${m.surge[k]}' is not a number` });
+      });
+      const s = Surge.at(m);
+      if (!Storm.any(m))
+        errs.push({ where: 'surge', msg: 'needs a storm: block — the wall is storm, and it advances from the storm object’s own Step' });
+      if (!(s.speed > 0))
+        errs.push({ where: 'surge', msg: `speed ${s.speed} must be above 0 — a wall that does not advance never closes anything` });
+      if (s.gap > s.slack)
+        errs.push({ where: 'surge', msg: `gap ${s.gap} is past slack ${s.slack}, so the catch-up is always on and the front never settles` });
+      if (s.stop > W) warn('surge', `stop ${s.stop} is past the ${W}-wide room`);
+      if (Surge.any(m) && !m.beats.some((b) => onoff(b.surge) === 'on'))
+        warn('surge', 'is configured but no beat turns it on');
+    }
     if (m.zones) errs.push({ where: 'zones', msg: 'zones: was replaced by storm: — build.py still rasterises it, but the editor paints the mask and would drop these circles on the next save' });
     return errs;
   }
@@ -634,6 +851,47 @@ window.Core = (function () {
         const cell = Storm.cell(m);
         ctx.fillStyle = 'rgba(255,60,50,0.14)';
         Storm.spans(m).forEach(([sx, sy, sw]) => ctx.fillRect(X(sx), Y(sy), S(sw), S(cell) + 0.5));
+      }
+    });
+    /* The camera limit and where the wall parks — both vertical lines in the
+       room, and both otherwise invisible until they are played.
+
+       Drawn under the actors and over the storm, because that is what they are:
+       constraints on the field, not things in it. The limit is shown as the
+       strip it forbids rather than as a line, since "you cannot look past here"
+       is a statement about the area behind it, and a bare line reads equally as
+       a wall the ship cannot cross — which it is not. The ship may fly past the
+       limit; only the camera stops.
+
+       `st` is the state at the scrub point when the timeline is driving, so the
+       strip is drawn lit while the beat that turns the limit off has not been
+       reached and dimmed once it has. Scrubbing to the reveal shows the strip
+       open, which is exactly the thing the reveal does. */
+    if (o.regions !== false) inRoom(() => {
+      const x2 = Surge.limit(m);
+      if (x2 != null && x2 < m.room.width) {
+        const on = st ? st.bounds !== false : true;
+        ctx.save();
+        ctx.fillStyle = `rgba(255,90,77,${on ? 0.07 : 0.02})`;
+        ctx.fillRect(X(x2), Y(0), S(m.room.width - x2), S(m.room.height));
+        ctx.strokeStyle = `rgba(255,90,77,${on ? 0.55 : 0.16})`;
+        ctx.lineWidth = 1; ctx.setLineDash([3, 5]);
+        ctx.beginPath(); ctx.moveTo(X(x2), Y(0)); ctx.lineTo(X(x2), Y(m.room.height)); ctx.stroke();
+        ctx.restore();
+        if (o.labels !== false)
+          label(on ? `camera stops · ${x2}` : `camera limit lifted · ${x2}`,
+            X(x2) + Math.min(S(m.room.width - x2), 200) / 2, Y(0) + 12,
+            on ? 'rgba(255,120,110,0.75)' : 'rgba(255,120,110,0.3)', 9);
+      }
+      if (Surge.any(m)) {
+        const s = Surge.at(m);
+        if (s.stop < m.room.width) {
+          ctx.save();
+          ctx.strokeStyle = 'rgba(255,150,70,0.5)'; ctx.lineWidth = 1.5; ctx.setLineDash([7, 4]);
+          ctx.beginPath(); ctx.moveTo(X(s.stop), Y(0)); ctx.lineTo(X(s.stop), Y(m.room.height)); ctx.stroke();
+          ctx.restore();
+          if (o.labels !== false) label(`the wall parks · ${s.stop}`, X(s.stop), Y(m.room.height) - 6, 'rgba(255,170,90,0.7)', 9);
+        }
       }
     });
     // The brush, and the cell grid it snaps to — only while the tool is up.
@@ -897,6 +1155,17 @@ window.Core = (function () {
     gates: ['# Dead beacons flown in order (MoveToArea gates).'],
     interval: 'frames between spawn attempts while on',
     cap: 'max live obs_Meteor — this is the density',
+    from: 'edge they enter by: right | top | bottom | left',
+    back: 'lights this far behind the ship',
+    sspeed: 'units/step, never slower',
+    gap: 'the gap it tries to hold',
+    slack: 'past this it accelerates',
+    rush: 'by this much',
+    stop: 'parks here, short of the guns',
+    sdmg: 'per section per step inside it',
+    shield: 'radius — a close fit on a hull 151 across',
+    spread: 'degrees of fan about straight across',
+    region: 'rocks are only ever placed inside this',
   };
 
   function toYaml(m) {
@@ -907,7 +1176,13 @@ window.Core = (function () {
     // back as a string and every consumer of it is arithmetic.
     const fv = (v) => (typeof v === 'string' && !/^[A-Za-z][A-Za-z0-9 ._-]*$/.test(v) ? q(v) : v);
     const flow = (o, keys) => '{' + keys.filter((k) => o[k] != null).map((k) => `${k}: ${fv(o[k])}`).join(', ') + '}';
-    const pad = (s, note) => (note ? s.padEnd(22) + '# ' + note : s);
+    // The comment column is 22, but never at the cost of the space in front of
+    // it: `#` has to be preceded by whitespace or YAML does not read it as a
+    // comment at all, and `{x1: 0, x2: 2830}# ...` is past the column and would
+    // come back as a parse error. Padding to 21 and spelling the space puts the
+    // `#` in the same place for everything that fits and one space out for
+    // everything that does not.
+    const pad = (s, note) => (note ? s.padEnd(21) + ' # ' + note : s);
     const L = [];
     L.push(`# Act II — Episode ${m.episode}: ${m.title}`, ...NOTE.header, '');
     L.push(`id: ${m.id}`, `episode: ${m.episode}`, pad(`mission: ${m.mission}`, NOTE.mission),
@@ -931,13 +1206,51 @@ window.Core = (function () {
       L.push('');
     }
     if (m.gates) { L.push(...NOTE.gates, 'gates:'); m.gates.forEach((g) => L.push('  - ' + flow(g, ['x', 'y']))); L.push(''); }
-    if (m.meteors) L.push('meteors:', pad(`  interval: ${m.meteors.interval}`, NOTE.interval),
-      pad(`  cap: ${m.meteors.cap}`, NOTE.cap), '');
+    // ensure() first, for the same reason the storm block does it: a file that
+    // named only `cap:` would otherwise write `interval: undefined` back out.
+    // The compiler's defaults become explicit on the first save, which is the
+    // trade the storm block already makes.
+    if (m.meteors) {
+      const mt = Meteors.ensure(m);
+      L.push('meteors:', pad(`  interval: ${mt.interval}`, NOTE.interval),
+        pad(`  cap: ${mt.cap}`, NOTE.cap),
+        pad(`  from: ${mt.from}`, NOTE.from),
+        pad(`  spread: ${mt.spread}`, NOTE.spread),
+        `  speed: ${flow(mt.speed, ['min', 'max'])}`);
+      // A region with nothing in it is no region: every corner it does not name
+      // is the room's own edge, so an empty one clips nothing and writing it
+      // back would only make the file claim a constraint it does not have.
+      if (mt.region && Object.keys(mt.region).length) {
+        L.push(pad(`  region: ${flow(mt.region, ['x1', 'y1', 'x2', 'y2'])}`, NOTE.region));
+      }
+      L.push('');
+    }
+    // ⚠ Anything the model carries and this function does not write is DELETED
+    // by the next save. That is the whole contract of this function, and it is
+    // why every block the compiler understands is written here whether or not
+    // the editor has a panel for it.
+    //
+    // An *empty* block is not written at all, and that is not a shortcut: the
+    // sheet clears a field by deleting the key, so emptying the last one leaves
+    // `{}` behind, and `bounds:`/`surge:` with nothing under them parses back as
+    // null — which build.py rejects outright ("must be a block"). build.py's own
+    // `if self.surge` already reads an empty block as no block, so dropping it
+    // says exactly what the compiler would have understood anyway.
+    if (m.bounds && Object.keys(m.bounds).length) L.push('bounds: ' + flow(m.bounds, ['x2']), '');
+    if (m.surge && Object.keys(m.surge).length) {
+      const sg = m.surge;
+      const row = (k, note) => { if (sg[k] != null) L.push(pad(`  ${k}: ${sg[k]}`, note)); };
+      L.push('surge:');
+      row('back', NOTE.back); row('speed', NOTE.sspeed); row('gap', NOTE.gap);
+      row('slack', NOTE.slack); row('rush', NOTE.rush); row('stop', NOTE.stop);
+      row('dmg', NOTE.sdmg); row('shield', NOTE.shield);
+      L.push('');
+    }
     L.push('beats:');
     // `note` first: it is why the rest of the beat looks like this, and a reason
     // printed under its conclusion is a footnote rather than an explanation.
-    const ORDER = ['note', 'start', 'music', 'eerie', 'interference', 'meteors', 'autosave', 'camera',
-      'spawn', 'ping', 'objective', 'say', 'gate', 'gate_at', 'wait', 'win', 'exec'];
+    const ORDER = ['note', 'start', 'controls', 'music', 'eerie', 'interference', 'meteors', 'surge', 'bounds',
+      'autosave', 'camera', 'spawn', 'ping', 'objective', 'say', 'gate', 'gate_at', 'wait', 'win', 'exec'];
     m.beats.forEach((b) => {
       const rows = [];
       ORDER.forEach((k) => {
@@ -950,7 +1263,7 @@ window.Core = (function () {
         } else if (k === 'spawn') {
           rows.push('spawn:');
           v.forEach((sp) => rows.push('  - ' + flow(sp, SPAWN_KEYS)));
-        } else if (k === 'camera') rows.push(`camera: ${flow(v, ['x', 'y', 'speed'])}`);
+        } else if (k === 'camera') rows.push(`camera: ${flow(v, ['x', 'y', 'speed', 'zoom'])}`);
         else if (k === 'gate_at') rows.push(`gate_at: ${flow(v, ['x', 'y'])}`);
         // Two forms: a pair is a fixed point, a bare name is the spawn it
         // follows. The name is a plain scalar and needs no quoting — the picker
@@ -961,7 +1274,9 @@ window.Core = (function () {
         // bare scalar; stripComment is quote-aware, so they survive.
         else if (k === 'note') { rows.push('note:'); noteLines(v).forEach((l) => rows.push(`  - ${q(l)}`)); }
         else if (k === 'objective') rows.push(`objective: ${q(v)}`);
-        else if (k === 'eerie' || k === 'meteors' || k === 'interference')
+        else if (k === 'interference') rows.push(`interference: ${Interf.write(v)}`);
+        else if (k === 'eerie' || k === 'meteors'
+                 || k === 'surge' || k === 'bounds' || k === 'controls')
           rows.push(`${k}: ${v === true ? 'on' : v === false ? 'off' : v}`);
         else if (k === 'exec') { rows.push('exec:'); v.forEach((e) => rows.push(`  - ${q(e)}`)); }
         else rows.push(`${k}: ${v}`);
@@ -1024,6 +1339,14 @@ window.Core = (function () {
       camera: (m) => ({ camera: { x: Math.round(m.room.width / 2), y: Math.round(m.room.height / 2), speed: 60 } }),
       meteors: () => ({ meteors: true }),
       interference: () => ({ interference: true }),
+      /* Each of these three arrives as the state that *does* something. Two of
+         them default on at Create and one defaults off, so "the useful one" is
+         not the same word each time: adding `controls: on` to a mission that
+         never locked the helm, or `bounds: on` to one that starts clamped
+         anyway, would both be no-ops that look like edits. */
+      controls: () => ({ controls: false }),
+      surge: () => ({ surge: true }),
+      bounds: () => ({ bounds: false }),
       music: () => ({ music: 'theme' }),
       autosave: () => ({ autosave: true }),
       win: () => ({ win: true }),
@@ -1115,6 +1438,6 @@ window.Core = (function () {
     onoff, esc, brk, sayClass, spawnLabel,
     numberBeats, advanceOf, actionsOf, geoOf, stateAt, pingAt, pingAnchors,
     noteLines, noteText, noteFrom, getPath, setPath, LOOK_KEYS,
-    lint, drawMap, toYaml, Model, Storm, Meteors,
+    lint, drawMap, toYaml, Model, Storm, Meteors, Surge, Interf,
   };
 })();

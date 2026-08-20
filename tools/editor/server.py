@@ -331,7 +331,15 @@ def reattach_comments(old, new):
                 out.extend(blocks[k])
             if k in trailing:
                 code, _ = _split_comment(line)
-                out.append(code.ljust(22) + trailing[k].strip())
+                # ⚠ Pad to 21 and then spell the space, rather than ljust(22):
+                # on a line already 22 wide ljust is a no-op and the `#` lands
+                # flush against the value — `{x1: 0, x2: 3430}# rocks…`. That is
+                # not a comment by _split_comment's own rule (it requires
+                # whitespace before the `#`), so the next save cannot see it,
+                # keeps the writer's generated comment instead, and puts the
+                # space back. The file then alternates between the two forms on
+                # every save. Same fix, same reason, as Core.toYaml's `pad()`.
+                out.append(code.ljust(21) + ' ' + trailing[k].strip())
                 continue
         out.append(line)
     return '\n'.join(out) + '\n'
@@ -515,6 +523,44 @@ class Wine:
         return {k: (v or '').split() for k, v in saved.items()}
 
     # ------------------------------------------------------------- process
+
+    #: Where the game's own stdout and stderr go, and where launch() reads the
+    #: reason back out when it dies. One constant, because the writer and the
+    #: reader have to agree about it.
+    RUN_LOG = '/tmp/bsf_editor_run.log'
+
+    #: How long launch() watches the child before it answers. Not a guess at how
+    #: long the game takes to start — the answer comes from the child *exiting*,
+    #: not from a timer — but the ceiling on waiting for one. Wine dying on a
+    #: display it cannot open lands in 1.2s, measured; this is twice that.
+    LAUNCH_SETTLE = 3.0
+
+    def _why_it_died(self, rc):
+        """Wine's own last word about a launch that did not survive.
+
+        The log is what the game was handed for stdout and stderr, so a failure
+        in the wine loader — which is where an unopenable display lands, before
+        the game exists at all — leaves its one line here and nowhere else.
+
+        DISPLAY comes back with it because it is the launch's most load-bearing
+        piece of environment and the browser cannot see any of it. It is also
+        the one an editor started from somewhere other than the desktop session
+        gets wrong: this server passes its own DISPLAY straight to wine, and a
+        server started with the wrong one fails every launch identically.
+        """
+        line = ''
+        try:
+            with open(self.RUN_LOG, encoding='utf-8', errors='replace') as f:
+                for ln in f:
+                    if ln.strip():
+                        line = ln.strip()
+        except OSError:
+            pass
+        if len(line) > 200:
+            line = line[:200] + '...'
+        return ((line or f'wine exited {rc} with nothing to say')
+                + f" (DISPLAY={self.env().get('DISPLAY') or 'unset'})")
+
     def launch(self, mission=None):
         """Start the game, optionally straight into a mission.
 
@@ -529,6 +575,13 @@ class Wine:
         view port when the room loads, so mods/resolution.gml rewrites all 25
         rooms and restarts. That is also why the generated mission mods author
         their room's view once and never again.
+
+        Returns `ok` only for a game that is still running a moment later. The
+        spawn always succeeds -- Popen hands back a process object whether or not
+        anything survives it -- so reporting the spawn was reporting nothing, and
+        a launch that died on the display left the editor saying `launching the
+        game...` with the status stuck at *not running* and no reason anywhere a
+        browser could reach.
         """
         if not self.ok:
             return {'ok': False, 'why': self.why or f'no install at {INSTALL}'}
@@ -545,10 +598,25 @@ class Wine:
         cmd = ['wine', self.game.EXE]
         if mission is not None:
             cmd += ['mission_editor', str(mission)]
-        log = open('/tmp/bsf_editor_run.log', 'wb')
-        subprocess.Popen(cmd, cwd=INSTALL, env=self.env(),
-                         stdout=log, stderr=log, stdin=subprocess.DEVNULL,
-                         start_new_session=True)
+        log = open(self.RUN_LOG, 'wb')
+        p = subprocess.Popen(cmd, cwd=INSTALL, env=self.env(),
+                             stdout=log, stderr=log, stdin=subprocess.DEVNULL,
+                             start_new_session=True)
+        log.close()                       # Popen dup'd it; the child holds its own
+
+        # Watch the CHILD, and never running(). `wine <exe>` carries the exe name
+        # in its own command line, so running() answers true for a launch that is
+        # in the middle of dying -- it answered true for every dead launch this
+        # check was added for, which is exactly how they came back as successes.
+        # A child that is still there after LAUNCH_SETTLE is a game that started;
+        # one that is gone took its reason to RUN_LOG on the way out.
+        deadline = time.time() + self.LAUNCH_SETTLE
+        while time.time() < deadline:
+            rc = p.poll()
+            if rc is not None:
+                return {'ok': False, 'launched': cmd[1:], 'log': self.RUN_LOG,
+                        'why': f'the game exited at once: {self._why_it_died(rc)}'}
+            time.sleep(0.05)
         return {'ok': True, 'launched': cmd[1:], 'prefixCreated': made,
                 'display': ('%dx%d ' % self.window)
                            + ('borderless fullscreen' if self.fullscreen else 'windowed')}
