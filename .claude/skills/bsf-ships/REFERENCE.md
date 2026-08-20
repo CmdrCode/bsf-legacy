@@ -364,6 +364,34 @@ Four generations, all readable by the corpus miner:
 `.sb4` has two versions; ver2 adds a trailing comma to `nSecTr`. Token-preserving
 storage handles it — do not special-case it.
 
+### What the game does with the file
+
+Every generation ends up as GML the game compiles. `importShip` reads the file,
+`unkryptstring`s it if it is shifted, and hands the text to `object_event_add(
+newobj, ev_create, 0, cod)` — a ship object is created at load time and the file
+*is* its Create event. sh1 and sh2 go in as they are. sh3 goes through
+`parseReadParams`, which rebuilds each record as a call — `nSec2a,1,2,…` becomes
+`nSec2a(1,2,…)` — and concatenates them into the same string. **The CSV
+generation is a compact source encoding, not a data format**; what it bought was
+file size and load time, not safety.
+
+So a string field is code, and the format has no escaping anywhere: a comma ends
+the field, a newline ends the record, a quote closes the string, and whatever
+follows is compiled. `model.FIELD_UNSAFE` names the three characters; `Ship.name`
+refuses them and `export._qstr` / `export._ident` strip them, which is the only
+thing between a hostile `.sb4` and a `.shp` that runs code on load.
+
+**The game's own filter is not a backstop.** It is five substrings — `file_`,
+`execute_`, `registry_`, `object_event_`, `script_` — checked only on the sh1/sh2
+path, with the one legitimate `object_event_add(...draw_sprite_ext...)` line
+swapped out for a sentinel first so it does not trip its own test. Two things
+make it inert: the arguments are reversed, so `string_pos(words, "file_")` looks
+for the whole ship inside the five-character literal and returns 0 for every
+ship (the same script writes `string_pos("//sh2", words)` correctly nine lines
+later), and `external_define` / `external_call` were never on the list anyway.
+Treat any `.shp` from outside as executable — `ship tree` reads one by regex and
+never evaluates it, which is the safe way to look.
+
 **All four generations now build sections and mounts**, not just `.sb4`. Before
 that, `ship tree` on any `.shp` reported 0 sections while round-tripping the file
 byte-exact, which reads as "the ship is empty" rather than "this reader does not

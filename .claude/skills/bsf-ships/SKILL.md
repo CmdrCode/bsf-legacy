@@ -166,6 +166,21 @@ follows `bsf-capture`'s posture rather than `bsf-storytelling`'s.
     file, which makes cursor-reading code work exactly once per session and
     silently drop the hull on every replay.
 
+19f. **A `.shp` is compiled, not parsed — in every generation.** `importShip`
+    reads the file and hands the text to `object_event_add(newobj, ev_create, 0,
+    cod)`: the file *is* the new ship object's Create event. sh1 and sh2 go in
+    as they are; sh3 goes through `parseReadParams`, which rebuilds each record
+    as a call (`nSec2a,1,2,…` → `nSec2a(1,2,…)`) and concatenates it into the
+    same string. The CSV generation is a compact *source* encoding — it bought
+    file size and load time, not safety. So a **field** is code, and the format
+    has no escaping: a comma ends the field, a newline ends the record, a quote
+    closes the string, and what follows compiles. `model.FIELD_UNSAFE` names the
+    three characters, `Ship.name` refuses them, and `export._qstr`/`_ident`
+    strip them on the way out — that is the whole of what stands between a
+    hostile `.sb4` and a `.shp` that runs. **The game's own filter is not a
+    backstop** (see REFERENCE.md). Read an outside `.shp` with `ship tree`,
+    which is regex and never evaluates; do not load one to find out what it is.
+
 ### The two things that are not in git
 
 20. **The `.sb4` is source; the game loads the `.shp`.** Sections there are
