@@ -209,9 +209,16 @@
     App.emit('reload'); paintChrome();
   };
   $('#launch').onclick = () => {
-    const go = () => Live.launch(App.mission ? App.mission.mission : null).then((d) => {
-      toast(d.ok ? 'launching the game…' : (d.why || 'could not launch'), d.ok ? 'good' : 'bad');
-    });
+    // Two toasts on purpose. api/launch now waits to see whether the game is
+    // still there a moment after the spawn — that is the whole of what makes its
+    // answer worth anything — so the click has a few seconds of nothing to say
+    // and has to say it, or the button reads as dead.
+    const go = () => {
+      toast('starting the game…');
+      return Live.launch(App.mission ? App.mission.mission : null).then((d) => {
+        toast(d.ok ? 'the game is up' : (d.why || 'could not launch'), d.ok ? 'good' : 'bad');
+      });
+    };
     if (Live.running) Live.stop().then(() => setTimeout(go, 1200)); else go();
   };
   $('#paint').onclick = () => {

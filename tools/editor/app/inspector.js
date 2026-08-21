@@ -26,6 +26,9 @@ window.Inspector = (function () {
 .card.spawn { border-left-color:var(--alien); } .card.gate, .card.gate_at { border-left-color:var(--phos); }
 .card.camera, .card.ping { border-left-color:#7aa0c8; } .card.exec { border-left-color:var(--amber); }
 .card.interference { border-left-color:var(--hostile); }
+/* The three that change what the *player* may do or see, rather than what is
+   in the room — amber, the colour this editor already uses for a lever. */
+.card.controls, .card.surge, .card.bounds { border-left-color:var(--amber); }
 .card > h5 { margin:0; padding:5px 8px; font:9.5px/1 var(--mono); letter-spacing:.14em; text-transform:uppercase;
              color:var(--ink-faint); display:flex; justify-content:space-between; border-bottom:1px solid var(--rule-soft); }
 .card > h5 .x { cursor:pointer; color:#3f5a55; }
@@ -47,6 +50,10 @@ window.Inspector = (function () {
   border:1px solid var(--rule); border-radius:2px; padding:3px 5px; width:100%; }
 .card input:focus, .card textarea:focus, .card select:focus { outline:none; border-color:var(--phos); }
 .card .xy { display:flex; gap:5px; }
+.card .chks { display:flex; gap:14px; flex-wrap:wrap; padding:1px 0 2px; }
+.card .chk { display:flex; align-items:center; gap:5px; cursor:pointer; font-size:10.5px;
+  color:var(--ink); letter-spacing:.06em; }
+.card .chk input { width:auto; margin:0; accent-color:var(--phos); cursor:pointer; }
 .card .note { font-size:10px; color:var(--ink-faint); }
 .ins-add { display:flex; flex-wrap:wrap; gap:4px; margin-top:8px; }
 .ins-add button, .ins-f button, .card button { all:unset; cursor:pointer; font:9.5px/1 var(--mono); letter-spacing:.08em;
@@ -426,9 +433,49 @@ window.Inspector = (function () {
       music: (b) => [['track', sel('music', b.music, ['stop', 'theme', 'battle'])]],
       eerie: (b) => [['state', sel('eerie', C.onoff(b.eerie), ['on', 'off'])]],
       meteors: (b) => [['spawner', sel('meteors', C.onoff(b.meteors), ['on', 'off'])]],
-      interference: (b) => [
-        ['state', sel('interference', C.onoff(b.interference), ['on', 'off'])],
-        ['', '<span class="note">the storm on the instruments: every nebula flares additively and every hull section leaves a jittered half-alpha echo. Stock ctr_Mission3, generalised — see DESIGN.md</span>']],
+      /* A checkbox per target rather than one on/off, because the two halves of
+         this effect say different things and a mission wants them apart: the
+         weather does not stop when you dock, but the instruments clear. Both
+         ticked writes `interference: on` and neither writes `off`, so a mission
+         that never cared about the distinction keeps the file it always had. */
+      interference: (b) => {
+        const st = C.Interf.state(b.interference);
+        const box = (k, label) => `<label class="chk"><input type="checkbox" data-interf="${k}"`
+          + `${st[k] ? ' checked' : ''}> ${label}</label>`;
+        return [
+          [null, `<div class="chks">${box('ships', 'ships')}${box('clouds', 'clouds')}</div>`],
+          ['', '<span class="note"><b>clouds</b> — every ter_Nebula, and the storm\'s own gas with it, redrawn additively with a random alpha kick. This is the weather.</span>'],
+          ['', '<span class="note"><b>ships</b> — every hull section leaves a jittered half-alpha echo at its previous position. Stock ctr_Mission3, generalised; it is the only effect in the game that makes the <i>player</i> look wrong, which is why it reads as interference and not as weather.</span>'],
+        ];
+      },
+      /* The three flags whose machinery lives in a mission-level block. Each
+         card edits the flag and *reports* the block, rather than editing both:
+         the block is one setting for the whole mission and belongs in the sheet
+         (m), while the flag is a moment in the story and belongs here. Saying
+         where the other half is, is the whole job of the note lines. */
+      controls: (b) => [
+        ['helm', sel('controls', C.onoff(b.controls), ['on', 'off'])],
+        ['', '<span class="note"><b>off</b> takes the ship away: it stops being selectable, which is what stops orders, and any live selection is dropped. The camera is pinned where it stands and yields to a scripted pan, so <b>camera:</b> in a later beat still moves the view while the player cannot. <b>on</b> gives it back.</span>'],
+        ['', '<span class="note">beat 0 decides the state the room opens in — the compiler reads it at Create, so a mission that locks the helm is locked before the first frame rather than 45 frames in.</span>']],
+      surge: (b) => {
+        const mm = m(), s = C.Surge.at(mm), has = C.Surge.any(mm);
+        return [
+          ['wall', sel('surge', C.onoff(b.surge), ['on', 'off'])],
+          ['', `<span class="note">the advancing wall of storm. <b>on</b> lights it ${s.back} units behind the ship — behind wherever the ship <i>is</i>, not at a fixed x, so moving this beat moves the wall with it — and it closes at ${s.speed}/step until it parks at x ${s.stop}.</span>`],
+          ['', C.Storm.any(mm)
+            ? `<span class="note">${has ? 'settings' : 'no <b>surge:</b> block — running on the compiler’s defaults'}: edit them in the mission sheet (<b>m</b>).</span>`
+            : '<span class="note stale">no storm: block — the wall is made of storm and will never advance</span>'],
+        ];
+      },
+      bounds: (b) => {
+        const x2 = C.Surge.limit(m());
+        return [
+          ['limit', sel('bounds', C.onoff(b.bounds), ['on', 'off'])],
+          ['', x2 == null
+            ? '<span class="note stale">no <b>bounds: x2</b> in the mission sheet (<b>m</b>) — this flag has no edge to clamp to and does nothing</span>'
+            : `<span class="note">how far right the camera may look, clamped at x ${x2} exactly as the room's own edge clamps it. The ship may still fly past it; only the view stops. A mission carrying <b>bounds:</b> starts clamped, so the beat that names it is normally the one that turns it <b>off</b> — the reveal.</span>`],
+        ];
+      },
       exec: (b) => [
         ['gml', `<textarea data-p="exec.0" rows="3">${C.esc(b.exec[0] || '')}</textarea>`],
         ['', '<span class="note">passed through verbatim, and replayed on a seek — the compiler cannot tell whether it sets up the world</span>']],
@@ -439,7 +486,7 @@ window.Inspector = (function () {
     };
 
     const ADDABLE = ['note', 'say', 'objective', 'spawn', 'gate', 'camera', 'meteors', 'interference',
-      'music', 'autosave', 'win'];
+      'controls', 'surge', 'bounds', 'music', 'autosave', 'win'];
 
     // Paths whose field may legally be empty, meaning the key is not written.
     const OPTIONAL = /^spawn\.\d+\.(sprite|scale|angle|frame|tint|name)$/;
@@ -552,7 +599,11 @@ window.Inspector = (function () {
       if (e.target.dataset.num != null) v = Number(v) || 0;
       if (p === 'gate') v = Number(v);
       if (p === 'wait') { if (v === 'none') delete m().beats[App.selected].wait; else M.poke(m(), App.selected, 'wait', 'gate'); }
-      else if (p === 'eerie' || p === 'meteors' || p === 'interference') M.poke(m(), App.selected, p, v === 'on');
+      // `interference` is not here: its card is checkboxes, not a select, and
+      // the change listener above owns it. Coercing it to a boolean would flatten
+      // a per-target block back to all-or-nothing.
+      else if (p === 'eerie' || p === 'meteors'
+               || p === 'controls' || p === 'surge' || p === 'bounds') M.poke(m(), App.selected, p, v === 'on');
       else M.poke(m(), App.selected, p, v);
       App.change(); renderTrack();
     });
@@ -593,6 +644,23 @@ window.Inspector = (function () {
 
     root.addEventListener('change', (e) => {
       if (e.target.dataset.pinglink != null) return pingLink(e.target.value);
+      /* An interference target. The model keeps whichever form is shortest —
+         `on`, `off`, or the block — rather than always writing the block, so
+         ticking both boxes gives back the plain `interference: on` an author
+         would have typed, and the file does not grow a distinction the mission
+         does not make. Core.Interf.write() decides; this only has to hand it
+         the new state. */
+      const t = e.target.dataset.interf;
+      if (t) {
+        const b = m().beats[App.selected];
+        const st = C.Interf.state(b.interference);
+        st[t] = e.target.checked;
+        M.set(m(), App.selected, 'interference',
+          C.Interf.TARGETS.every((k) => st[k]) ? true
+            : C.Interf.TARGETS.every((k) => !st[k]) ? false : st);
+        App.change(); renderTrack(); renderIns();
+        return;
+      }
       if (e.target.matches('select')) { M.begin(m()); renderIns(); }
     });
 

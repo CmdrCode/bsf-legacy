@@ -125,7 +125,9 @@ body.tl-dragging *, body.tl-dragging [contenteditable] { user-select:none !impor
       met: run((b) => C.onoff(b.meteors), 'met', () => 'obs_Meteor spawner'),
       mus: run((b) => (b.music ? (b.music === 'stop' ? 'off' : 'on') : null), 'mus', (b) => 'bgm ' + b.music),
       eer: run((b) => C.onoff(b.eerie), 'eer', () => 'snd_eeriesound'),
-      inf: run((b) => C.onoff(b.interference), 'inf', () => 'storm interference'),
+      inf: run((b) => (b.interference == null ? undefined
+        : (C.Interf.TARGETS.some((k) => C.Interf.state(b.interference)[k]) ? 'on' : 'off')),
+        'inf', () => 'storm interference'),
     };
   }
 
@@ -301,7 +303,8 @@ body.tl-dragging *, body.tl-dragging [contenteditable] { user-select:none !impor
     refs.state.innerHTML =
       `<div><em>beacons</em> ${st.gatesDone.length}/${(m.gates || []).length}</div>` +
       `<div><em>meteors</em> <span class="${st.meteors ? 'on' : 'off'}">${st.meteors ? 'on' : 'off'}</span></div>` +
-      `<div><em>interference</em> <span class="${st.interference ? 'on' : 'off'}">${st.interference ? 'on' : 'off'}</span></div>` +
+      `<div><em>interference</em> <span class="${C.Interf.TARGETS.some((k) => st.interference[k]) ? 'on' : 'off'}">${
+        C.Interf.TARGETS.filter((k) => st.interference[k]).join(' + ') || 'off'}</span></div>` +
       `<div><em>eerie</em> <span class="${st.eerie ? 'on' : 'off'}">${st.eerie ? 'on' : 'off'}</span></div>` +
       `<div><em>music</em> ${st.music || '—'}</div>` +
       `<div><em>spawned</em> ${st.spawns.length ? st.spawns.map(C.spawnLabel).join(', ') : '—'}</div>`;

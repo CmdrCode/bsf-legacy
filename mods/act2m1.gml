@@ -56,6 +56,7 @@ if (!variable_global_exists('ed_beat')) { global.ed_beat = -1; global.ed_beatseq
 // created, and that instance never ran a Create that knew about this flag.
 // Reading a global that does not exist aborts the action it is read in.
 if (!variable_global_exists('a2m1_interf')) global.a2m1_interf = 0;
+if (!variable_global_exists('a2m1_interfc')) global.a2m1_interfc = 0;
 
 
 // ------------------------------------------------------------------- storm
@@ -65,51 +66,51 @@ if (!variable_global_exists('a2m1_interf')) global.a2m1_interf = 0;
 // read from these rows. What bites is the row, not the cloud: a puff is many
 // cells wide, so the gas laps over clear space the mask says nothing about.
 global.a2m1_cellsz = 50;
-global.a2m1_cols = 100;
+global.a2m1_cols = 112;
 global.a2m1_rows = 40;
 global.a2m1_d1 = 0.3;
 global.a2m1_d2 = 0.4;
 global.a2m1_dens = 0.18;
-global.a2m1_mrow[0] = "...........................................#................##.........##############...............";
-global.a2m1_mrow[1] = "........#.........#........................##...........................#############.....######....";
-global.a2m1_mrow[2] = "##.################...........................#..........................###.#######....#########...";
-global.a2m1_mrow[3] = "#....#@@@.....##.........####........@@@......................................#####....###########..";
-global.a2m1_mrow[4] = "#....#@@@@@@.#.....@@@###...##.......@@@..............................................############..";
-global.a2m1_mrow[5] = "#.....@@@@@@@......@@@#......#####...@@@..............................................#############.";
-global.a2m1_mrow[6] = "#...####.@@@@......@@@................................................................#############.";
-global.a2m1_mrow[7] = "#####...##@@@......##.............#...................................................##############";
-global.a2m1_mrow[8] = "............@@@...##..............#...................................................##############";
-global.a2m1_mrow[9] = "...........#@@@..##.#.............#.#..................................................#############";
-global.a2m1_mrow[10] = ".........#.#@@@.##.##...............#...................................................############";
-global.a2m1_mrow[11] = ".........###...##.##...............##.....................................................##########";
-global.a2m1_mrow[12] = "...............#.#.................##......................................................#########";
-global.a2m1_mrow[13] = "...............#...................##.......................................................########";
-global.a2m1_mrow[14] = ".............@@@@...................#........................................................#######";
-global.a2m1_mrow[15] = ".............@@@@............................................................................#######";
-global.a2m1_mrow[16] = ".............@@@@............................................................................#######";
-global.a2m1_mrow[17] = "..............#..............................................................................#######";
-global.a2m1_mrow[18] = ".............#...............................................................................#######";
-global.a2m1_mrow[19] = ".............#...............................................................................#######";
-global.a2m1_mrow[20] = ".............#...............................................................................#######";
-global.a2m1_mrow[21] = ".............................................................................................#######";
-global.a2m1_mrow[22] = ".............................................#...............................................#######";
-global.a2m1_mrow[23] = "............................#................................................................#######";
-global.a2m1_mrow[24] = "...........................##...............#...............................................########";
-global.a2m1_mrow[25] = "...........................##...............#...............................................########";
-global.a2m1_mrow[26] = "...........................#.................#..............................................########";
-global.a2m1_mrow[27] = "...........................#...............................................................#########";
-global.a2m1_mrow[28] = "..........................#................#.#.............................................#########";
-global.a2m1_mrow[29] = ".........................###.................#............................................##########";
-global.a2m1_mrow[30] = ".#.......................####............................................................###########";
-global.a2m1_mrow[31] = ".##......................#####..........................................................############";
-global.a2m1_mrow[32] = ".##......................#...##............#...........................................#############";
-global.a2m1_mrow[33] = "..#......................#####@@@.....................................................#############.";
-global.a2m1_mrow[34] = "..#@@@.....................##.@@@..............##....................................##############.";
-global.a2m1_mrow[35] = "..#@@@........................@@@..............@@@............................#####..##############.";
-global.a2m1_mrow[36] = "..@@@@.........................##.............#@@@...........................#######.#############..";
-global.a2m1_mrow[37] = "..@@@@#........##...#...........#.......#######@@@..........................#####################...";
-global.a2m1_mrow[38] = "..@@@@.........####..............#..#####.................#####..#####......###################.....";
-global.a2m1_mrow[39] = "..................................###....................##############.....##################......";
+global.a2m1_mrow[0] = "...........................................#..@@@@@@@@@@@@@@@@@##......#@@@@@......############@@@@@@...........";
+global.a2m1_mrow[1] = "........#.........#....................###.###@@@@@@@@@@@@@@@@@###.....##@@@........#############@@@@@######....";
+global.a2m1_mrow[2] = "##.################...................#####..##@@@@@@@@@@@@@@@####.....#####.........###.#######.@@@@@#######...";
+global.a2m1_mrow[3] = "#....#@@@.....##.........####........@#####..########################...###...............#####..@@@@@########..";
+global.a2m1_mrow[4] = "#....#@@@@@@.#.....@@@###...##.......@#####...###############.########............................@@@#########..";
+global.a2m1_mrow[5] = "#.....@@@@@@@......@@@#......#####...@@###.......................#####............................#######@@@###.";
+global.a2m1_mrow[6] = "#...####.@@@@......@@@...........................................#####............................######@@@@@##.";
+global.a2m1_mrow[7] = "#####...##@@@......##.............#...............................###.............................######@@@@@###";
+global.a2m1_mrow[8] = "............@@@...##..............#...............................................................######@@@@@###";
+global.a2m1_mrow[9] = "...........#@@@..##.#.............#.#..............................................................#####@@@@@###";
+global.a2m1_mrow[10] = ".........#.#@@@.##.##...............#...............................................................####@@@@@###";
+global.a2m1_mrow[11] = ".........###...##.##...............##.................................................................##@@@@@###";
+global.a2m1_mrow[12] = "...............#.#.................##..................................................................##@@@####";
+global.a2m1_mrow[13] = "...............#...................##...................................................................########";
+global.a2m1_mrow[14] = ".............@@@@...................#....................................................................#######";
+global.a2m1_mrow[15] = ".............@@@@........................................................................................#######";
+global.a2m1_mrow[16] = ".............@@@@........................................................................................#######";
+global.a2m1_mrow[17] = "..............#..........................................................................................#######";
+global.a2m1_mrow[18] = ".............#...........................................................................................#######";
+global.a2m1_mrow[19] = ".............#...........................................................................................#######";
+global.a2m1_mrow[20] = ".............#...........................................................................................#@@@###";
+global.a2m1_mrow[21] = ".........................................................................................................@@@@@##";
+global.a2m1_mrow[22] = ".............................................#...........................................................@@@@@##";
+global.a2m1_mrow[23] = "............................#............................................................................@@@@@##";
+global.a2m1_mrow[24] = "...........................##...............#...........................................................#@@@@@##";
+global.a2m1_mrow[25] = "...........................##...............#...........................................................#@@@@@##";
+global.a2m1_mrow[26] = "...........................#.................#..........................................................@@@@@@##";
+global.a2m1_mrow[27] = "...........................#...........................................................................#@@@@@###";
+global.a2m1_mrow[28] = "..........................#................#.#.........................................................#@@@@@###";
+global.a2m1_mrow[29] = ".........................###.................#........................................................##@@@@@###";
+global.a2m1_mrow[30] = ".#.......................####........................................................................##@@@@@@###";
+global.a2m1_mrow[31] = ".##......................#####......................................................................###@@@@@####";
+global.a2m1_mrow[32] = ".##......................#...##............#.......................................................###@@@@@@####";
+global.a2m1_mrow[33] = "..#......................#####@@@.................................................................####@@@@@@@##.";
+global.a2m1_mrow[34] = "..#@@@.....................##.@@@..............##############.@@@..........@@@...................#####@@@@@@@##.";
+global.a2m1_mrow[35] = "..#@@@........................@@@..............@@@@@@@@@@@@@@@@@@@........@@@@@.........@@@####..####@@@@@@@@##.";
+global.a2m1_mrow[36] = "..@@@@.........................##.............#@@@@@@@@@@@@@@@@@@@@.......@@@@@........@@@@@####.###@@@@@@@@##..";
+global.a2m1_mrow[37] = "..@@@@#........##...#...........#.......#######@@@@@@@@@@@@@@@@@@@@.......@@@@@........@@@@@########@@@@@####...";
+global.a2m1_mrow[38] = "..@@@@.........####..............#..#####.......@@@@@@@@@@@@@@@@@@@...#####@@@####.....@@@@@########@@@@@##.....";
+global.a2m1_mrow[39] = "..................................###........................@@@@@...##############.....@@@##########@@@##......";
 
 var stx_r, stx_c, stx_ch, stx_v, stx_c0;
 for (stx_r = 0; stx_r < global.a2m1_rows; stx_r += 1) {
@@ -144,6 +145,85 @@ for (stx_r = 0; stx_r < global.a2m1_rows; stx_r += 1) {
     }
 }
 
+// ------------------------------------------------------- the camera limit
+if (!variable_global_exists('a2m1_ctl')) global.a2m1_ctl = 1;
+if (!variable_global_exists('a2m1_clx')) { global.a2m1_clx = 0; global.a2m1_cly = 0; }
+if (!variable_global_exists('a2m1_cll')) global.a2m1_cll = 0;
+if (!variable_global_exists('a2m1_bounds')) global.a2m1_bounds = 0;
+if (!variable_global_exists('a2m1_bx2')) global.a2m1_bx2 = 3600;
+if (!variable_global_exists('a2m1_boundhook')) {
+global.a2m1_boundhook = 1;
+object_event_add(ctr_GUI, 3, 2,
+    'if (global.a2m1_bounds = 1) {' +
+    'if (room = global.act2_room1) {' +
+    'var blim;' +
+    'blim = global.a2m1_bx2 + GUI_MinimapSize * l_zoom - view_wview[0];' +
+    'if (blim < 0) blim = 0;' +
+    'if (l_viewx > blim) { view_xview[0] += blim - l_viewx; l_viewx = blim; }' +
+    '}' +
+    '}');
+
+object_event_add(ctr_GUI, 3, 2,
+    'if (room = global.act2_room1) {' +
+    'if (global.a2m1_ctl = 0) {' +
+    'if (global.a2m1_cll = 0) {' +
+    'global.a2m1_clx = l_viewx; global.a2m1_cly = l_viewy;' +
+    'if (!instance_exists(GUI_CamMover)) global.a2m1_cll = 1;' +
+    '} else {' +
+    'view_xview[0] += global.a2m1_clx - l_viewx; view_yview[0] += global.a2m1_cly - l_viewy;' +
+    'l_viewx = global.a2m1_clx; l_viewy = global.a2m1_cly;' +
+    '}' +
+    'if (instance_exists(global.a2m1_ship)) with (global.a2m1_ship) {' +
+    'l_movetox = x; l_movetoy = y; l_faceto = -1;' +
+    'l_target = -4; l_facetarg = -4; alarm[8] = 0; l_holdposition = true;' +
+    '}' +
+    '} else {' +
+    'global.a2m1_clx = l_viewx; global.a2m1_cly = l_viewy; global.a2m1_cll = 0;' +
+    '}' +
+    '}');
+
+// The minimap half. Without it the camera limit hides nothing — ctr_GUI blips
+// every ctr_Ship in the room, so a station the player cannot look at is still a
+// cluster of squares in the corner. It is also what stops the limit reading as
+// a bug: a camera that silently refuses to pan is broken, a camera that stops
+// at a line the map draws is a door.
+//
+// Appended to Draw so it lands on top of the minimap ctr_GUI just drew.
+//
+// ⚠ The rect is re-derived here rather than read off ctr_GUI. `mapx1`, `mapx2`
+// and `mapsizew` are ctr_GUI instance variables in the stock source — assigned
+// in its Create and refreshed in its End Step — and reading them from an
+// appended Draw action is still "Unknown variable mapx1", 1321 times in one
+// sitting. Whatever owns them, it is not the instance this action runs on.
+//
+// So the geometry comes from what is legible from anywhere: the minimap is
+// GUI_MinimapSize * global.l_zoom square, pinned to the top-right corner of the
+// view, and a world x lands at that same fraction of it. That is the stock
+// transform written out rather than borrowed, and it needs nothing but the view
+// and the room.
+object_event_add(ctr_GUI, 8, 0,
+    'if (global.a2m1_bounds = 1) {' +
+    'if (room = global.act2_room1) {' +
+    'var mw, mx1, mx2, my1, fx;' +
+    'mw = GUI_MinimapSize * global.l_zoom;' +
+    'mx1 = view_xview[0] + view_wview[0] - mw;' +
+    'mx2 = view_xview[0] + view_wview[0] - 1;' +
+    'my1 = view_yview[0];' +
+    'fx = mx1 + global.a2m1_bx2 * mw / room_width;' +
+    'if (fx < mx2) {' +
+    'draw_set_color(c_black);' +
+    'draw_set_alpha(0.92);' +
+    'draw_rectangle(fx, my1, mx2, my1 + mw, 0);' +
+    'draw_set_alpha(1);' +
+    'draw_set_color($00FF00);' +
+    'draw_line(fx, my1, fx, my1 + mw);' +
+    '}' +
+    '}' +
+    '}');
+}
+global.a2m1_bx2 = 3600;
+
+
 // ------------------------------------------------------------- define once
 // GM7 has no room_delete, so a room_add per reload would leak one every time.
 //
@@ -171,7 +251,7 @@ room_set_view_enabled(global.act2_room1, 1);
 object_event_clear(global.a2m1_stormobj, 0, 0);
 object_event_add(global.a2m1_stormobj, 0, 0,
     'depth = 700;' +
-    'l_bolt = 0; l_flash = 0; l_bn = 0;' +
+    'l_bolt = 0; l_flash = 0; l_bn = 0; l_wcull = 0;' +
     'var sr, sc, sv, se, pd, pf;' +
     'for (sr = 0; sr < global.a2m1_rows; sr += 1) {' +
     'for (sc = 0; sc < global.a2m1_cols; sc += 1) {' +
@@ -200,10 +280,64 @@ object_event_add(global.a2m1_stormobj, 0, 0,
     'alarm[0] = 45 + random(90);');
 object_event_clear(global.a2m1_stormobj, 3, 0);
 object_event_add(global.a2m1_stormobj, 3, 0,
-    'var sr, sc, sv;' +
+    'var sr, sc, sv, kh, khit;' +
     'if (global.ed_pause) exit;' +
     'if (l_bolt > 0) l_bolt -= 1;' +
     'if (l_flash > 0) l_flash -= 1;' +
+    'if (global.a2m1_surge = 1) {' +
+    'var wsp, wgap, wcol, wr, wc, wi, wdx, wdy, wsk, wpf;' +
+    'wsp = 1.2;' +
+    'if (instance_exists(global.a2m1_ship)) {' +
+    'wgap = global.a2m1_ship.x - global.a2m1_sx;' +
+    'if (wgap > 800) wsp = wsp * 2.2;' +
+    '}' +
+    'global.a2m1_sx += wsp;' +
+    'if (global.a2m1_sx > 2900) global.a2m1_sx = 2900;' +
+    'for (wi = 0; wi < global.a2m1_nsh; wi += 1) {' +
+    'if (global.a2m1_shon[wi] = 0) {' +
+    'if (global.a2m1_sx > global.a2m1_shx[wi] - global.a2m1_shr - 140) global.a2m1_shon[wi] = 1;' +
+    '}' +
+    '}' +
+    'wcol = floor(global.a2m1_sx / global.a2m1_cellsz);' +
+    'if (global.a2m1_scol < 0) global.a2m1_scol = 0;' +
+    'while (global.a2m1_scol <= wcol) {' +
+    'wc = global.a2m1_scol;' +
+    'global.a2m1_scol += 1;' +
+    'if (wc < global.a2m1_cols) {' +
+    'for (wr = 0; wr < global.a2m1_rows; wr += 1) {' +
+    'wsk = 0;' +
+    'for (wi = 0; wi < global.a2m1_nsh; wi += 1) {' +
+    'if (global.a2m1_shon[wi] = 1) {' +
+    'wdx = (wc + 0.5) * global.a2m1_cellsz - global.a2m1_shx[wi];' +
+    'wdy = (wr + 0.5) * global.a2m1_cellsz - global.a2m1_shy[wi];' +
+    'if (wdx * wdx + wdy * wdy < global.a2m1_shr * global.a2m1_shr) wsk = 1;' +
+    '}' +
+    '}' +
+    'if (wsk = 0) {' +
+    'global.a2m1_g[wr * global.a2m1_cols + wc] = 3;' +
+    'if (random(1) < global.a2m1_dens) {' +
+    'wpf = instance_create(wc * global.a2m1_cellsz + random(global.a2m1_cellsz), wr * global.a2m1_cellsz + random(global.a2m1_cellsz), global.a2m1_puffobj);' +
+    'wpf.l_wall = 1;' +
+    'wpf.image_blend = make_color_rgb(255, 90 + random(70), 40 + random(50));' +
+    '}' +
+    '}' +
+    '}' +
+    '}' +
+    '}' +
+    'l_wcull += 1;' +
+    'if (l_wcull > 90) {' +
+    'l_wcull = 0;' +
+    'with (global.a2m1_puffobj) { if (l_wall = 1) { if (x < global.a2m1_sx - 1500) instance_destroy(); } }' +
+    '}' +
+    '}' +
+    'for (kh = 0; kh < global.a2m1_nsh; kh += 1) {' +
+    'if (global.a2m1_shf[kh] > 0) global.a2m1_shf[kh] -= 1;' +
+    'khit = collision_circle(global.a2m1_shx[kh], global.a2m1_shy[kh], global.a2m1_shr, obs_Meteor, 0, 1);' +
+    'if (khit != noone) {' +
+    'with (khit) instance_destroy();' +
+    'global.a2m1_shf[kh] = 12;' +
+    '}' +
+    '}' +
     'if (global.ed_edit) exit;' +
     'if (instance_exists(global.a2m1_ship)) {' +
     'with (ShipSection) {' +
@@ -214,6 +348,7 @@ object_event_add(global.a2m1_stormobj, 3, 0,
     'sv = global.a2m1_g[sr * global.a2m1_cols + sc];' +
     'if (sv = 1) damage(global.a2m1_d1, id);' +
     'if (sv = 2) damage(global.a2m1_d2, id);' +
+    'if (sv = 3) damage(global.a2m1_d3, id);' +
     '} } } }' +
     '}' +
     '}' +
@@ -223,6 +358,7 @@ object_event_add(global.a2m1_stormobj, 3, 0,
     'sv = global.a2m1_g[sr * global.a2m1_cols + sc];' +
     'if (sv = 1) damage(global.a2m1_d1, global.a2m1_ship);' +
     'if (sv = 2) damage(global.a2m1_d2, global.a2m1_ship);' +
+    'if (sv = 3) damage(global.a2m1_d3, global.a2m1_ship);' +
     '} } } }' +
     '}');
 object_event_clear(global.a2m1_stormobj, 8, 0);
@@ -248,6 +384,7 @@ object_event_add(global.a2m1_puffobj, 0, 0,
     'image_angle = random(360);' +
     'image_alpha = 0.13 + random(0.15);' +
     'image_blend = make_color_rgb(180 + random(75), 26 + random(46), 26 + random(34));' +
+    'l_wall = 0;' +
     'l_lo = image_alpha;' +
     'l_hi = image_alpha + 0.15;' +
     'l_glow = 0.004 + random(0.006);' +
@@ -316,6 +453,17 @@ object_event_add(global.a2m1_ctr, 0, 0,
     'global.ed_beat = -1; global.ed_beatseq += 1;' +
     'global.a2m1_won = 0; global.a2m1_failed = 0; global.a2m1_meteors = 0;' +
     'global.a2m1_interf = 0;' +
+    'global.a2m1_interfc = 0;' +
+    'global.a2m1_surge = 0; global.a2m1_sx = 0; global.a2m1_scol = 0;' +
+    'global.a2m1_bounds = 1;' +
+    'global.a2m1_d3 = 2.5;' +
+    'global.a2m1_shr = 88;' +
+    'global.a2m1_nsh = 5;' +
+    'global.a2m1_shx[0] = 724; global.a2m1_shy[0] = 1448; global.a2m1_shon[0] = 0; global.a2m1_shf[0] = 0;' +
+    'global.a2m1_shx[1] = 1314; global.a2m1_shy[1] = 739; global.a2m1_shon[1] = 0; global.a2m1_shf[1] = 0;' +
+    'global.a2m1_shx[2] = 1911; global.a2m1_shy[2] = 1222; global.a2m1_shon[2] = 0; global.a2m1_shf[2] = 0;' +
+    'global.a2m1_shx[3] = 2269; global.a2m1_shy[3] = 741; global.a2m1_shon[3] = 0; global.a2m1_shf[3] = 0;' +
+    'global.a2m1_shx[4] = 3120; global.a2m1_shy[4] = 1120; global.a2m1_shon[4] = 0; global.a2m1_shf[4] = 0;' +
     'if !variable_global_exists("l_fnames") then' +
     '{' +
     'global.l_fnames = ds_list_create();' +
@@ -326,6 +474,12 @@ object_event_add(global.a2m1_ctr, 0, 0,
     'stopMusic();' +
     's = instance_create(260,1000,Hestia);' +
     'global.a2m1_ship = s;' +
+    'global.a2m1_ctl = 0;' +
+    'if (global.a2m1_ctl = 0) s.l_myship = 0;' +
+    '/* Unlatched on every entry, so the pin takes the camera this run actually has' +
+    '   rather than one a previous run left in the global. centreCamera below is what' +
+    '   it will latch onto. */' +
+    'global.a2m1_cll = 0;' +
     'with (ShipSection) { if (l_owner = global.a2m1_ship) l_hp = l_hp * 0.55; }' +
     'repeat (16) { instance_create(random(room_width),random(room_height),ter_Nebula); }' +
     'instance_create(0,0,global.a2m1_stormobj);' +
@@ -339,9 +493,11 @@ object_event_add(global.a2m1_ctr, 2, 2,
     'global.ed_beatseq += 1;' +
     'stopMusic();' +
     'sound_loop(snd_eeriesound);' +
-    'global.a2m1_interf = 1;' +
+    'global.a2m1_interf = 1; global.a2m1_interfc = 1;' +
     'centreCamera(260,1000,0);' +
     'global.lasteventx = 260; global.lasteventy = 1000;' +
+    'global.a2m1_cll = 0;' +
+    'global.a2m1_ctl = 0; if (instance_exists(global.a2m1_ship)) global.a2m1_ship.l_myship = 0; if (instance_exists(ctr_GUI)) ctr_GUI.l_numselected = 0;' +
     's = noone;' +
     'if (file_exists("mods/ships/beacon_ratline.shp")) {' +
     'with (ctr_Spawner) instance_destroy();' +
@@ -385,46 +541,67 @@ object_event_add(global.a2m1_ctr, 2, 2,
     's = noone;' +
     'if (file_exists("mods/ships/beacon_ratline.shp")) {' +
     'with (ctr_Spawner) instance_destroy();' +
-    'global.a2m1_imp = importShip("mods/ships/beacon_ratline.shp",2,2520,1120);' +
+    'global.a2m1_imp = importShip("mods/ships/beacon_ratline.shp",2,3120,1120);' +
     'with (ctr_Spawner) instance_destroy();' +
     'if (global.a2m1_imp >= 0) {' +
-    's = instance_create(2520,1120,global.a2m1_imp);' +
+    's = instance_create(3120,1120,global.a2m1_imp);' +
     '}' +
     '}' +
     'if (instance_exists(s)) { s.l_holdposition = true; s.l_myship = 0; s.l_thrust = 0; s.l_maxspeed = 0; s.l_turning = 0; s.direction = 23; s.image_angle = 23; };' +
     'global.a2m1_gateN = noone;' +
     'if (file_exists("mods/ships/station_gatebattery.shp")) {' +
     'with (ctr_Spawner) instance_destroy();' +
-    'global.a2m1_imp = importShip("mods/ships/station_gatebattery.shp",2,2830,800);' +
+    'global.a2m1_imp = importShip("mods/ships/station_gatebattery.shp",2,3430,800);' +
     'with (ctr_Spawner) instance_destroy();' +
     'if (global.a2m1_imp >= 0) {' +
-    'global.a2m1_gateN = instance_create(2830,800,global.a2m1_imp);' +
+    'global.a2m1_gateN = instance_create(3430,800,global.a2m1_imp);' +
     '}' +
     '}' +
     'if (instance_exists(global.a2m1_gateN)) { global.a2m1_gateN.l_holdposition = true; global.a2m1_gateN.l_myship = 0; global.a2m1_gateN.l_thrust = 0; global.a2m1_gateN.l_maxspeed = 0; global.a2m1_gateN.l_turning = 0; global.a2m1_gateN.direction = 205; global.a2m1_gateN.image_angle = 205; };' +
     'global.a2m1_gateS = noone;' +
     'if (file_exists("mods/ships/station_gatebattery.shp")) {' +
     'with (ctr_Spawner) instance_destroy();' +
-    'global.a2m1_imp = importShip("mods/ships/station_gatebattery.shp",2,2830,1290);' +
+    'global.a2m1_imp = importShip("mods/ships/station_gatebattery.shp",2,3430,1290);' +
     'with (ctr_Spawner) instance_destroy();' +
     'if (global.a2m1_imp >= 0) {' +
-    'global.a2m1_gateS = instance_create(2830,1290,global.a2m1_imp);' +
+    'global.a2m1_gateS = instance_create(3430,1290,global.a2m1_imp);' +
     '}' +
     '}' +
     'if (instance_exists(global.a2m1_gateS)) { global.a2m1_gateS.l_holdposition = true; global.a2m1_gateS.l_myship = 0; global.a2m1_gateS.l_thrust = 0; global.a2m1_gateS.l_maxspeed = 0; global.a2m1_gateS.l_turning = 0; global.a2m1_gateS.direction = 155; global.a2m1_gateS.image_angle = 155; };' +
+    'global.a2m1_station = noone;' +
+    'if (file_exists("mods/ships/station_bolthole.shp")) {' +
+    'with (ctr_Spawner) instance_destroy();' +
+    'global.a2m1_imp = importShip("mods/ships/station_bolthole.shp",2,4269,1102);' +
+    'with (ctr_Spawner) instance_destroy();' +
+    'if (global.a2m1_imp >= 0) {' +
+    'global.a2m1_station = instance_create(4269,1102,global.a2m1_imp);' +
+    '}' +
+    '}' +
+    'if (instance_exists(global.a2m1_station)) { global.a2m1_station.l_holdposition = true; global.a2m1_station.l_myship = 0; global.a2m1_station.l_thrust = 0; global.a2m1_station.l_maxspeed = 0; global.a2m1_station.l_turning = 0; global.a2m1_station.direction = 90; global.a2m1_station.image_angle = 90; };' +
+    'instance_create(3955,461,ter_Planet);' +
+    'global.a2m1_berth1 = instance_create(3790,707,Hecate); global.a2m1_berth1.l_holdposition = true; global.a2m1_berth1.l_myship = 0; global.a2m1_berth1.l_thrust = 0; global.a2m1_berth1.l_maxspeed = 0; global.a2m1_berth1.l_turning = 0; global.a2m1_berth1.direction = 270; global.a2m1_berth1.image_angle = 270;' +
+    'global.a2m1_berth2 = instance_create(3989,775,Cronus); global.a2m1_berth2.l_holdposition = true; global.a2m1_berth2.l_myship = 0; global.a2m1_berth2.l_thrust = 0; global.a2m1_berth2.l_maxspeed = 0; global.a2m1_berth2.l_turning = 0; global.a2m1_berth2.direction = 270; global.a2m1_berth2.image_angle = 270;' +
+    'global.a2m1_berth3 = instance_create(4560,707,Athena); global.a2m1_berth3.l_holdposition = true; global.a2m1_berth3.l_myship = 0; global.a2m1_berth3.l_thrust = 0; global.a2m1_berth3.l_maxspeed = 0; global.a2m1_berth3.l_turning = 0; global.a2m1_berth3.direction = 270; global.a2m1_berth3.image_angle = 270;' +
+    'global.a2m1_berth4 = instance_create(4737,800,Hestia); global.a2m1_berth4.l_holdposition = true; global.a2m1_berth4.l_myship = 0; global.a2m1_berth4.l_thrust = 0; global.a2m1_berth4.l_maxspeed = 0; global.a2m1_berth4.l_turning = 0; global.a2m1_berth4.direction = 270; global.a2m1_berth4.image_angle = 270;' +
     'showMessage(0,$00FF00,"[Hint]",global.a2m1_t21,spr_MesHint);');
 object_event_clear(global.a2m1_ctr, 2, 5);
 object_event_add(global.a2m1_ctr, 2, 5,
     'if (global.a2m1_meteors = 1) {' +
     'if (instance_number(obs_Meteor) < 48) {' +
     'if (instance_exists(global.a2m1_ship)) {' +
-    'var mm, px, py;' +
+    'var mm, px, py, ba, sl, sh;' +
     'px = global.a2m1_ship.x; py = global.a2m1_ship.y;' +
-    'mm = instance_create(px + 500 + random(300), py - 400 + random(800), obs_Meteor);' +
-    'mm.direction = 150 + random(60);' +
+    'ba = min(py - 500, view_yview[0] - 64);' +
+    'sl = min(px - 400, view_xview[0]);' +
+    'sh = max(px + 400, view_xview[0] + view_wview[0]);' +
+    'sl = max(sl, 0); sh = min(sh, 3430);' +
+    'if (sh > sl) {' +
+    'mm = instance_create(sl + random(sh - sl), ba - random(300), obs_Meteor);' +
+    'mm.direction = 240 + random(60);' +
     'mm.speed = 1 + random(1.2);' +
     'mm.image_xscale = 0.5 + random(0.4);' +
     'mm.image_yscale = mm.image_xscale;' +
+    '}' +
     '}' +
     '}' +
     'alarm[5] = 35;' +
@@ -457,6 +634,7 @@ object_event_add(global.a2m1_ctr, 7, 10,
     'else if (l_messagecount = 3) {' +
     'global.ed_beat = 3;' +
     'global.ed_beatseq += 1;' +
+    'global.a2m1_ctl = 1; if (instance_exists(global.a2m1_ship)) { global.a2m1_ship.l_myship = 1; global.a2m1_ship.l_holdposition = false; };' +
     'global.a2m1_meteors = 1; alarm[5] = 1;' +
     'showMessage(0,c_red,"New Objective",global.a2m1_t2,spr_MesObj);' +
     'g = instance_create(724,1448,MoveToArea); g.l_target = global.a2m1_ship; showPing(724,1448);' +
@@ -477,7 +655,9 @@ object_event_add(global.a2m1_ctr, 7, 10,
     'else if (l_messagecount = 9) {' +
     'global.ed_beat = 9;' +
     'global.ed_beatseq += 1;' +
+    'stopMusic(); bgm_Play(global.mus_battle,1);' +
     'if (global.difficulty != World_Hard) saveGame();' +
+    'global.a2m1_surge = 1; global.a2m1_sx = global.a2m1_ship.x - 900; global.a2m1_scol = floor(global.a2m1_sx / global.a2m1_cellsz);' +
     'showMessage(0,$00FF00,"Helm",global.a2m1_t5,spr_MesMan1);' +
     'g = instance_create(2269,741,MoveToArea); g.l_target = global.a2m1_ship; showPing(2269,741);' +
     '}' +
@@ -485,7 +665,7 @@ object_event_add(global.a2m1_ctr, 7, 10,
     'global.ed_beat = 11;' +
     'global.ed_beatseq += 1;' +
     'showMessage(0,$00FF00,"Helm",global.a2m1_t6,spr_MesMan1);' +
-    'g = instance_create(2520,1120,MoveToArea); g.l_target = global.a2m1_ship; showPing(2520,1120);' +
+    'g = instance_create(3120,1120,MoveToArea); g.l_target = global.a2m1_ship; showPing(3120,1120);' +
     '}' +
     'else if (l_messagecount = 13) {' +
     'global.ed_beat = 13;' +
@@ -509,24 +689,12 @@ object_event_add(global.a2m1_ctr, 7, 10,
     'global.ed_beatseq += 1;' +
     'stopMusic(); bgm_Play(global.mus_theme,1);' +
     'sound_stop(snd_eeriesound);' +
-    'global.a2m1_interf = 0;' +
-    'centreCamera(3697,917,90);' +
-    'global.lasteventx = 3697; global.lasteventy = 917;' +
-    'global.a2m1_station = noone;' +
-    'if (file_exists("mods/ships/station_bolthole.shp")) {' +
-    'with (ctr_Spawner) instance_destroy();' +
-    'global.a2m1_imp = importShip("mods/ships/station_bolthole.shp",2,3669,1102);' +
-    'with (ctr_Spawner) instance_destroy();' +
-    'if (global.a2m1_imp >= 0) {' +
-    'global.a2m1_station = instance_create(3669,1102,global.a2m1_imp);' +
-    '}' +
-    '}' +
-    'if (instance_exists(global.a2m1_station)) { global.a2m1_station.l_holdposition = true; global.a2m1_station.l_myship = 0; global.a2m1_station.l_thrust = 0; global.a2m1_station.l_maxspeed = 0; global.a2m1_station.l_turning = 0; global.a2m1_station.direction = 90; global.a2m1_station.image_angle = 90; };' +
-    'instance_create(3355,461,ter_Planet);' +
-    'global.a2m1_berth1 = instance_create(3190,707,Hecate); global.a2m1_berth1.l_holdposition = true; global.a2m1_berth1.l_myship = 0; global.a2m1_berth1.l_thrust = 0; global.a2m1_berth1.l_maxspeed = 0; global.a2m1_berth1.l_turning = 0; global.a2m1_berth1.direction = 270; global.a2m1_berth1.image_angle = 270;' +
-    'global.a2m1_berth2 = instance_create(3389,775,Cronus); global.a2m1_berth2.l_holdposition = true; global.a2m1_berth2.l_myship = 0; global.a2m1_berth2.l_thrust = 0; global.a2m1_berth2.l_maxspeed = 0; global.a2m1_berth2.l_turning = 0; global.a2m1_berth2.direction = 270; global.a2m1_berth2.image_angle = 270;' +
-    'global.a2m1_berth3 = instance_create(3960,707,Athena); global.a2m1_berth3.l_holdposition = true; global.a2m1_berth3.l_myship = 0; global.a2m1_berth3.l_thrust = 0; global.a2m1_berth3.l_maxspeed = 0; global.a2m1_berth3.l_turning = 0; global.a2m1_berth3.direction = 270; global.a2m1_berth3.image_angle = 270;' +
-    'global.a2m1_berth4 = instance_create(4137,800,Hestia); global.a2m1_berth4.l_holdposition = true; global.a2m1_berth4.l_myship = 0; global.a2m1_berth4.l_thrust = 0; global.a2m1_berth4.l_maxspeed = 0; global.a2m1_berth4.l_turning = 0; global.a2m1_berth4.direction = 270; global.a2m1_berth4.image_angle = 270;' +
+    'global.a2m1_interf = 0; global.a2m1_interfc = 1;' +
+    'centreCamera(4297,917,90);' +
+    'global.lasteventx = 4297; global.lasteventy = 917;' +
+    'global.a2m1_cll = 0;' +
+    'if (instance_exists(ctr_GUI)) ctr_GUI.l_zoomtar = 1.3;' +
+    'global.a2m1_bounds = 0;' +
     'showMessage(0,$00FF00,"Fleet HQ",global.a2m1_t10,spr_MesHQ);' +
     '}' +
     'else if (l_messagecount = 17) {' +
@@ -543,13 +711,13 @@ object_event_add(global.a2m1_ctr, 7, 10,
     'global.ed_beat = 19;' +
     'global.ed_beatseq += 1;' +
     'showMessage(0,$00FF00,"Fleet Admiral Hong",global.a2m1_t13,spr_MesHong);' +
-    'g = instance_create(3647,825,MoveToArea); g.l_target = global.a2m1_ship; showPing(3647,825);' +
+    'g = instance_create(4247,825,MoveToArea); g.l_target = global.a2m1_ship; showPing(4247,825);' +
     '}' +
     'else if (l_messagecount = 21) {' +
     'global.ed_beat = 21;' +
     'global.ed_beatseq += 1;' +
-    'global.a2m1_hestiax = instance_create(3644,701,Hestia);' +
-    'showPing(3644,701);' +
+    'global.a2m1_hestiax = instance_create(4244,701,Hestia);' +
+    'showPing(4244,701);' +
     'showMessage(0,$00FF00,"Fleet Admiral Hong",global.a2m1_t14,spr_MesHong);' +
     '}' +
     'else if (l_messagecount = 22) {' +
@@ -591,7 +759,12 @@ object_event_clear(global.a2m1_ctr, 7, 11);
 object_event_add(global.a2m1_ctr, 7, 11,
     'var s;' +
     'if (l_seek >= 3) { if (l_seek_from < 3) {' +
+    'global.a2m1_ctl = 1; if (instance_exists(global.a2m1_ship)) { global.a2m1_ship.l_myship = 1; global.a2m1_ship.l_holdposition = false; };' +
     'global.a2m1_meteors = 1; alarm[5] = 1;' +
+    '} }' +
+    'if (l_seek >= 9) { if (l_seek_from < 9) {' +
+    'stopMusic(); bgm_Play(global.mus_battle,1);' +
+    'global.a2m1_surge = 1; global.a2m1_sx = global.a2m1_ship.x - 900; global.a2m1_scol = floor(global.a2m1_sx / global.a2m1_cellsz);' +
     '} }' +
     'if (l_seek >= 15) { if (l_seek_from < 15) {' +
     'global.a2m1_meteors = 0;' +
@@ -599,27 +772,15 @@ object_event_add(global.a2m1_ctr, 7, 11,
     'if (l_seek >= 16) { if (l_seek_from < 16) {' +
     'stopMusic(); bgm_Play(global.mus_theme,1);' +
     'sound_stop(snd_eeriesound);' +
-    'global.a2m1_interf = 0;' +
-    'centreCamera(3697,917,90);' +
-    'global.lasteventx = 3697; global.lasteventy = 917;' +
-    'global.a2m1_station = noone;' +
-    'if (file_exists("mods/ships/station_bolthole.shp")) {' +
-    'with (ctr_Spawner) instance_destroy();' +
-    'global.a2m1_imp = importShip("mods/ships/station_bolthole.shp",2,3669,1102);' +
-    'with (ctr_Spawner) instance_destroy();' +
-    'if (global.a2m1_imp >= 0) {' +
-    'global.a2m1_station = instance_create(3669,1102,global.a2m1_imp);' +
-    '}' +
-    '}' +
-    'if (instance_exists(global.a2m1_station)) { global.a2m1_station.l_holdposition = true; global.a2m1_station.l_myship = 0; global.a2m1_station.l_thrust = 0; global.a2m1_station.l_maxspeed = 0; global.a2m1_station.l_turning = 0; global.a2m1_station.direction = 90; global.a2m1_station.image_angle = 90; };' +
-    'instance_create(3355,461,ter_Planet);' +
-    'global.a2m1_berth1 = instance_create(3190,707,Hecate); global.a2m1_berth1.l_holdposition = true; global.a2m1_berth1.l_myship = 0; global.a2m1_berth1.l_thrust = 0; global.a2m1_berth1.l_maxspeed = 0; global.a2m1_berth1.l_turning = 0; global.a2m1_berth1.direction = 270; global.a2m1_berth1.image_angle = 270;' +
-    'global.a2m1_berth2 = instance_create(3389,775,Cronus); global.a2m1_berth2.l_holdposition = true; global.a2m1_berth2.l_myship = 0; global.a2m1_berth2.l_thrust = 0; global.a2m1_berth2.l_maxspeed = 0; global.a2m1_berth2.l_turning = 0; global.a2m1_berth2.direction = 270; global.a2m1_berth2.image_angle = 270;' +
-    'global.a2m1_berth3 = instance_create(3960,707,Athena); global.a2m1_berth3.l_holdposition = true; global.a2m1_berth3.l_myship = 0; global.a2m1_berth3.l_thrust = 0; global.a2m1_berth3.l_maxspeed = 0; global.a2m1_berth3.l_turning = 0; global.a2m1_berth3.direction = 270; global.a2m1_berth3.image_angle = 270;' +
-    'global.a2m1_berth4 = instance_create(4137,800,Hestia); global.a2m1_berth4.l_holdposition = true; global.a2m1_berth4.l_myship = 0; global.a2m1_berth4.l_thrust = 0; global.a2m1_berth4.l_maxspeed = 0; global.a2m1_berth4.l_turning = 0; global.a2m1_berth4.direction = 270; global.a2m1_berth4.image_angle = 270;' +
+    'global.a2m1_interf = 0; global.a2m1_interfc = 1;' +
+    'centreCamera(4297,917,90);' +
+    'global.lasteventx = 4297; global.lasteventy = 917;' +
+    'global.a2m1_cll = 0;' +
+    'if (instance_exists(ctr_GUI)) ctr_GUI.l_zoomtar = 1.3;' +
+    'global.a2m1_bounds = 0;' +
     '} }' +
     'if (l_seek >= 21) { if (l_seek_from < 21) {' +
-    'global.a2m1_hestiax = instance_create(3644,701,Hestia);' +
+    'global.a2m1_hestiax = instance_create(4244,701,Hestia);' +
     '} }' +
     'l_seek_from = l_seek;' +
     'global.ed_beat = l_seek;' +
@@ -648,7 +809,7 @@ object_event_add(global.a2m1_ctr, 7, 11,
     'else if (l_seek = 28) l_messagecount = 29;');
 object_event_clear(global.a2m1_ctr, 8, 0);
 object_event_add(global.a2m1_ctr, 8, 0,
-    'var vx, vy, vw, vh, i;' +
+    'var vx, vy, vw, vh, i, shx, shy, shr, shp, shf, shs;' +
     'vx = view_xview[0]; vy = view_yview[0]; vw = view_wview[0]; vh = view_hview[0];' +
     'with (global.a2m1_stormobj) {' +
     'if (l_bolt > 0) {' +
@@ -666,7 +827,31 @@ object_event_add(global.a2m1_ctr, 8, 0,
     'draw_set_blend_mode(bm_normal);' +
     '}' +
     '}' +
-    'if (global.a2m1_interf = 0) exit;' +
+    'if (global.a2m1_nsh > 0) {' +
+    'draw_set_circle_precision(48);' +
+    'draw_set_blend_mode(bm_add);' +
+    'for (i = 0; i < global.a2m1_nsh; i += 1) {' +
+    'shf = global.a2m1_shf[i] / 12;' +
+    'shs = 0;' +
+    'if (global.a2m1_shon[i] = 1) shs = 1;' +
+    'if (shs + shf > 0) {' +
+    'shx = global.a2m1_shx[i]; shy = global.a2m1_shy[i]; shr = global.a2m1_shr;' +
+    'if (shx > vx - shr) { if (shx < vx + vw + shr) {' +
+    'if (shy > vy - shr) { if (shy < vy + vh + shr) {' +
+    'shp = 0.55 + 0.45 * sin(current_time / 260 + i * 1.7);' +
+    'shr = shr + shf * 7;' +
+    'draw_set_alpha(shs * (0.10 + 0.06 * shp) + 0.30 * shf);' +
+    'draw_circle_color(shx, shy, shr, make_color_rgb(0, 0, 0), make_color_rgb(30 + 150 * shf, 90 + 70 * shp + 110 * shf, 150 + 90 * shp + 60 * shf), 0);' +
+    'draw_set_color(make_color_rgb(165 + 80 * shf, 225, 255));' +
+    'draw_set_alpha(shs * (0.40 + 0.28 * shp) + 0.55 * shf);' +
+    'draw_circle(shx, shy, shr, true);' +
+    'draw_set_alpha(1);' +
+    '} } } }' +
+    '}' +
+    '}' +
+    'draw_set_blend_mode(bm_normal);' +
+    '}' +
+    'if (global.a2m1_interfc = 1) {' +
     'draw_set_blend_mode(bm_add);' +
     'with (ter_Nebula) {' +
     'draw_sprite_ext(sprite_index,image_index,x,y,image_xscale,image_yscale,image_angle,image_blend,image_alpha + random(0.4));' +
@@ -677,11 +862,14 @@ object_event_add(global.a2m1_ctr, 8, 0,
     '} } } }' +
     '}' +
     'draw_set_blend_mode(bm_normal);' +
+    '}' +
+    'if (global.a2m1_interf = 1) {' +
     'with (ShipSection) {' +
     'draw_sprite_ext(sprite_index,image_index,xprevious - 4 + random(8),yprevious - 4 + random(8),image_xscale * (1 + random(0.22)),image_yscale * (1 + random(0.22)),image_angle,l_colour,image_alpha / 2);' +
+    '}' +
     '}');
 
-room_set_width(global.act2_room1, 5000);
+room_set_width(global.act2_room1, 5600);
 room_set_height(global.act2_room1, 2000);
 room_set_caption(global.act2_room1, "Bolthole");
 room_set_background_color(global.act2_room1, c_black, 1);

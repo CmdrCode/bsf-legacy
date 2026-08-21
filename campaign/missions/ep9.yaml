@@ -12,7 +12,7 @@ title: Bolthole
 subtitle: Act II - Episode 9
 
 room:
-  width: 5000
+  width: 5600
   height: 2000
   caption: Bolthole
 
@@ -40,46 +40,46 @@ storm:
   density: 0.18       # gas-cloud puffs per filled cell
   lightning: 90       # average frames between strikes (0 = none)
   mask:
-    - "...........................................#................##.........##############..............."
-    - "........#.........#........................##...........................#############.....######...."
-    - "##.################...........................#..........................###.#######....#########..."
-    - "#....#@@@.....##.........####........@@@......................................#####....###########.."
-    - "#....#@@@@@@.#.....@@@###...##.......@@@..............................................############.."
-    - "#.....@@@@@@@......@@@#......#####...@@@..............................................#############."
-    - "#...####.@@@@......@@@................................................................#############."
-    - "#####...##@@@......##.............#...................................................##############"
-    - "............@@@...##..............#...................................................##############"
-    - "...........#@@@..##.#.............#.#..................................................#############"
-    - ".........#.#@@@.##.##...............#...................................................############"
-    - ".........###...##.##...............##.....................................................##########"
-    - "...............#.#.................##......................................................#########"
-    - "...............#...................##.......................................................########"
-    - ".............@@@@...................#........................................................#######"
-    - ".............@@@@............................................................................#######"
-    - ".............@@@@............................................................................#######"
-    - "..............#..............................................................................#######"
-    - ".............#...............................................................................#######"
-    - ".............#...............................................................................#######"
-    - ".............#...............................................................................#######"
-    - ".............................................................................................#######"
-    - ".............................................#...............................................#######"
-    - "............................#................................................................#######"
-    - "...........................##...............#...............................................########"
-    - "...........................##...............#...............................................########"
-    - "...........................#.................#..............................................########"
-    - "...........................#...............................................................#########"
-    - "..........................#................#.#.............................................#########"
-    - ".........................###.................#............................................##########"
-    - ".#.......................####............................................................###########"
-    - ".##......................#####..........................................................############"
-    - ".##......................#...##............#...........................................#############"
-    - "..#......................#####@@@.....................................................#############."
-    - "..#@@@.....................##.@@@..............##....................................##############."
-    - "..#@@@........................@@@..............@@@............................#####..##############."
-    - "..@@@@.........................##.............#@@@...........................#######.#############.."
-    - "..@@@@#........##...#...........#.......#######@@@..........................#####################..."
-    - "..@@@@.........####..............#..#####.................#####..#####......###################....."
-    - "..................................###....................##############.....##################......"
+    - "...........................................#..@@@@@@@@@@@@@@@@@##......#@@@@@......############@@@@@@..........."
+    - "........#.........#....................###.###@@@@@@@@@@@@@@@@@###.....##@@@........#############@@@@@######...."
+    - "##.################...................#####..##@@@@@@@@@@@@@@@####.....#####.........###.#######.@@@@@#######..."
+    - "#....#@@@.....##.........####........@#####..########################...###...............#####..@@@@@########.."
+    - "#....#@@@@@@.#.....@@@###...##.......@#####...###############.########............................@@@#########.."
+    - "#.....@@@@@@@......@@@#......#####...@@###.......................#####............................#######@@@###."
+    - "#...####.@@@@......@@@...........................................#####............................######@@@@@##."
+    - "#####...##@@@......##.............#...............................###.............................######@@@@@###"
+    - "............@@@...##..............#...............................................................######@@@@@###"
+    - "...........#@@@..##.#.............#.#..............................................................#####@@@@@###"
+    - ".........#.#@@@.##.##...............#...............................................................####@@@@@###"
+    - ".........###...##.##...............##.................................................................##@@@@@###"
+    - "...............#.#.................##..................................................................##@@@####"
+    - "...............#...................##...................................................................########"
+    - ".............@@@@...................#....................................................................#######"
+    - ".............@@@@........................................................................................#######"
+    - ".............@@@@........................................................................................#######"
+    - "..............#..........................................................................................#######"
+    - ".............#...........................................................................................#######"
+    - ".............#...........................................................................................#######"
+    - ".............#...........................................................................................#@@@###"
+    - ".........................................................................................................@@@@@##"
+    - ".............................................#...........................................................@@@@@##"
+    - "............................#............................................................................@@@@@##"
+    - "...........................##...............#...........................................................#@@@@@##"
+    - "...........................##...............#...........................................................#@@@@@##"
+    - "...........................#.................#..........................................................@@@@@@##"
+    - "...........................#...........................................................................#@@@@@###"
+    - "..........................#................#.#.........................................................#@@@@@###"
+    - ".........................###.................#........................................................##@@@@@###"
+    - ".#.......................####........................................................................##@@@@@@###"
+    - ".##......................#####......................................................................###@@@@@####"
+    - ".##......................#...##............#.......................................................###@@@@@@####"
+    - "..#......................#####@@@.................................................................####@@@@@@@##."
+    - "..#@@@.....................##.@@@..............##############.@@@..........@@@...................#####@@@@@@@##."
+    - "..#@@@........................@@@..............@@@@@@@@@@@@@@@@@@@........@@@@@.........@@@####..####@@@@@@@@##."
+    - "..@@@@.........................##.............#@@@@@@@@@@@@@@@@@@@@.......@@@@@........@@@@@####.###@@@@@@@@##.."
+    - "..@@@@#........##...#...........#.......#######@@@@@@@@@@@@@@@@@@@@.......@@@@@........@@@@@########@@@@@####..."
+    - "..@@@@.........####..............#..#####.......@@@@@@@@@@@@@@@@@@@...#####@@@####.....@@@@@########@@@@@##....."
+    - "..................................###........................@@@@@...##############.....@@@##########@@@##......"
 
 # The Ratlines — dead beacons flown in order (MoveToArea gates).
 gates:
@@ -87,15 +87,53 @@ gates:
   - {x: 1314, y: 739}
   - {x: 1911, y: 1222}
   - {x: 2269, y: 741}
-  - {x: 2520, y: 1120}
+  - {x: 3120, y: 1120}
 
 meteors:
   interval: 35        # frames between spawn attempts while on
   cap: 48             # max live obs_Meteor — this is the density
+  from: top           # edge they enter by: right | top | bottom | left
+  spread: 60          # degrees of fan about straight across
+  speed: {min: 1, max: 2.2}
+  region: {x1: 0, x2: 3430} # rocks are only ever placed inside this
+
+# How far the camera may look. Bolthole sits behind this line for the whole run
+# and is pre-spawned behind it, so the arrival is a camera move rather than six
+# hulls appearing out of nothing. 3600 is 170 past the gate batteries -- their
+# guns are fully visible with a sliver of space beyond -- and 90 short of the
+# leftmost berth's art. The minimap is blacked out past the same line, which is
+# also what keeps a camera that stops reading as a door rather than a bug.
+bounds: {x2: 3600}
+
+# The storm wall that closes the Ratline behind you, lit at the surge beat.
+# It is real storm: it fills the mask as it advances, so it damages through the
+# same path as the painted field, at `dmg` instead of 0.3 -- a few seconds
+# inside it, not a slow bleed.
+#
+# `speed` is a floor and never a rate: the front never slows, so a ship that
+# stops is always caught and the wall is never seen waiting for you. Past
+# `slack` it closes at `rush` times speed until the gap is back to `gap`, which
+# is the whole of what keeps it in frame for a fast player.
+#
+# It parks at 2900, and that number is not about the guns -- it is about the
+# cutscene. Reaching beacon five fires a dialogue sequence the player cannot fly
+# out of, so the wall has to stop before the ship is pinned there. The gate
+# fires within 100 units of the beacon (3120), so the earliest the scene can
+# start is x 3020 and a hull sitting there reaches back to about 2945. 2900
+# leaves the wall visibly at your heels through the whole exchange and unable to
+# touch you during it.
+surge:
+  back: 900           # lights this far behind the ship
+  speed: 1.2          # units/step, never slower
+  gap: 500            # the gap it tries to hold
+  slack: 800          # past this it accelerates
+  rush: 2.2           # by this much
+  stop: 2900          # parks here, short of the LAST BEACON
+  dmg: 2.5            # per section per step inside it
+  shield: 88          # radius — a close fit on a hull 151 across
 
 beats:
-  - start: true
-    note:
+  - note:
       - "The dead beacons themselves, one per gate. They are placed *on* the"
       - "gate coordinate rather than beside it: MoveToArea fires at 100 units"
       - "and the hull is 151 across, so the gate clears about 25 units short of"
@@ -127,26 +165,34 @@ beats:
       - "reading -- 'authenticate or be fired upon' lands differently once the"
       - "guns saying it are already on screen."
       - ""
-      - "They sit at x 2830, between beacon five (2520) and the yard's left"
-      - "edge (3109). The y pair is not eyeballed: the line from beacon five"
-      - "to the gate_at crosses x 2830 at y 1039, so 800 and 1290 centre the"
+      - "They sit at x 3430, between beacon five (3120) and the yard's left"
+      - "edge (3709). The y pair is not eyeballed: the line from beacon five"
+      - "to the gate_at crosses x 3430 at y 1039, so 800 and 1290 centre the"
       - "gap on the course the player actually flies, to within 6 units. Each"
       - "hull is 180 x 168, leaving 322 clear to thread. Facing is the whole"
       - "of what makes them a *pair*: the design points its guns +x, and 205"
       - "and 155 turn them down-lane and inward, so their arcs cross over the"
       - "gap rather than pointing the same way twice."
+    start: true
+    controls: off
     music: stop
     eerie: on
     interference: on
     camera: {x: 260, y: 1000, speed: 0}
     spawn:
-      - {ship: mods/ships/beacon_ratline.shp,      team: ally, hold: true, facing: 12, x: 724,  y: 1448}
-      - {ship: mods/ships/beacon_ratline_hulk.shp, team: ally, hold: true, facing: 61, x: 1314, y: 739}
-      - {ship: mods/ships/beacon_ratline.shp,      team: ally, hold: true, facing: 34, x: 1911, y: 1222}
-      - {ship: mods/ships/beacon_ratline_hulk.shp, team: ally, hold: true, facing: 78, x: 2269, y: 741}
-      - {ship: mods/ships/beacon_ratline.shp,      team: ally, hold: true, facing: 23, x: 2520, y: 1120}
-      - {ship: mods/ships/station_gatebattery.shp, team: ally, hold: true, facing: 205, x: 2830, y: 800,  name: gateN}
-      - {ship: mods/ships/station_gatebattery.shp, team: ally, hold: true, facing: 155, x: 2830, y: 1290, name: gateS}
+      - {ship: "mods/ships/beacon_ratline.shp", team: ally, hold: true, facing: 12, x: 724, y: 1448}
+      - {ship: "mods/ships/beacon_ratline_hulk.shp", team: ally, hold: true, facing: 61, x: 1314, y: 739}
+      - {ship: "mods/ships/beacon_ratline.shp", team: ally, hold: true, facing: 34, x: 1911, y: 1222}
+      - {ship: "mods/ships/beacon_ratline_hulk.shp", team: ally, hold: true, facing: 78, x: 2269, y: 741}
+      - {ship: "mods/ships/beacon_ratline.shp", team: ally, hold: true, facing: 23, x: 3120, y: 1120}
+      - {ship: "mods/ships/station_gatebattery.shp", team: ally, hold: true, facing: 205, x: 3430, y: 800, name: gateN}
+      - {ship: "mods/ships/station_gatebattery.shp", team: ally, hold: true, facing: 155, x: 3430, y: 1290, name: gateS}
+      - {ship: "mods/ships/station_bolthole.shp", team: ally, hold: true, facing: 90, x: 4269, y: 1102, name: station}
+      - {object: ter_Planet, x: 3955, y: 461}
+      - {object: Hecate, hold: true, facing: 270, x: 3790, y: 707, name: berth1}
+      - {object: Cronus, hold: true, facing: 270, x: 3989, y: 775, name: berth2}
+      - {object: Athena, hold: true, facing: 270, x: 4560, y: 707, name: berth3}
+      - {object: Hestia, hold: true, facing: 270, x: 4737, y: 800, name: berth4}
     say:
       who: "[Hint]"
       sprite: spr_MesHint
@@ -162,7 +208,35 @@ beats:
       sprite: spr_MesHint
       text: "Storm cells are red clouds. They will damage any section inside them. Rogue asteroids drift through the lanes - evade them or destroy them."
 
-  - meteors: on
+  - note:
+      - "The helm comes back here too. The three opening beats set the scene --"
+      - "the nav computer, Helm on the storm wall, the hint about cells and"
+      - "rocks -- and none of them are worth reading while the player is already"
+      - "flying away from them. controls: off in the opening beat holds both the"
+      - "ship and the camera; this is where both are handed over, in the same"
+      - "beat as the objective that says what to do with them."
+      - ""
+      - "The field opens here, on the first move order, so the lanes are empty"
+      - "while Helm is still explaining them and full the moment the player"
+      - "starts flying."
+      - ""
+      - "The rocks fall down the lanes rather than running along them:"
+      - "from: top is the screen edge they come IN by, so they enter above the"
+      - "view and drift down across it. Everything else about the heading"
+      - "follows -- 270, fanned 60 degrees about straight down."
+      - ""
+      - "region stops at x 3430, which is the gate batteries' own line. Past"
+      - "them the player is inside Bolthole's perimeter and under its guns, and"
+      - "weather in the lanes has no business falling through someone's front"
+      - "yard. The clip is on the SPAWN, not on the rock: one already falling"
+      - "keeps falling, so the field thins as the player clears the last beacon"
+      - "rather than stopping dead at a line."
+      - ""
+      - "y is left to the room. With rocks coming from the top the vertical"
+      - "pair only decides whether they come at all, and here they always"
+      - "should."
+    controls: on
+    meteors: on
     objective: "Follow the Ratlines# #Reach each dead beacon in sequence"
     gate: 0
     wait: gate
@@ -182,7 +256,9 @@ beats:
     gate: 2
     wait: gate
 
-  - autosave: true
+  - music: battle
+    surge: on
+    autosave: true
     say:
       who: Helm
       sprite: spr_MesMan1
@@ -217,8 +293,8 @@ beats:
 
   - note:
       - "The reveal. The camera is aimed at the yard's measured centre, not at"
-      - "the approach: with art, station and berths span world 3109-4222 x"
-      - "615-1219, so 1113 x 604, centred on (3665.5, 917)."
+      - "the approach: with art, station and berths span world 3709-4822 x"
+      - "615-1219, so 1113 x 604, centred on (4265.5, 917)."
       - ""
       - "centreCamera already frames the part of the view the player can see."
       - "Measured at speed 0, view_xview comes out at exactly"
@@ -226,7 +302,7 @@ beats:
       - "view_yview at argument - view_hview[0] / 2 - so it reads the live view"
       - "and discounts the HUD column itself, and that aim holds at any aspect."
       - ""
-      - "x is therefore 3666 plus 31: a pan does not reach its target, it parks"
+      - "x is therefore 4266 plus 31: a pan does not reach its target, it parks"
       - "short of it in the direction it came from, and this pan always comes"
       - "from the left because the player flies in from x 260. Measured at 31.15"
       - "and identical across three runs. y needs no such term - the pan is"
@@ -258,15 +334,9 @@ beats:
       - "clear between them, and each hull still straddles its own arm."
     music: theme
     eerie: off
-    interference: off
-    camera: {x: 3697, y: 917, speed: 90}
-    spawn:
-      - {ship: "mods/ships/station_bolthole.shp", team: ally, hold: true, facing: 90, x: 3669, y: 1102, name: station}
-      - {object: ter_Planet, x: 3355, y: 461}
-      - {object: Hecate, hold: true, facing: 270, x: 3190, y: 707, name: berth1}
-      - {object: Cronus, hold: true, facing: 270, x: 3389, y: 775, name: berth2}
-      - {object: Athena, hold: true, facing: 270, x: 3960, y: 707, name: berth3}
-      - {object: Hestia, hold: true, facing: 270, x: 4137, y: 800, name: berth4}
+    interference: {ships: off, clouds: on}
+    bounds: off
+    camera: {x: 4297, y: 917, speed: 90, zoom: 1.3}
     say:
       who: Fleet HQ
       sprite: spr_MesHQ
@@ -286,11 +356,11 @@ beats:
       who: Fleet Admiral Hong
       sprite: spr_MesHong
       text: "It's been a long time since Sol, old friend. Bring your ship alongside the naval yard. There's something I want you to see."
-    gate_at: {x: 3647, y: 825}
+    gate_at: {x: 4247, y: 825}
     wait: gate
 
   - spawn:
-      - {object: Hestia, x: 3644, y: 701, name: hestiax}
+      - {object: Hestia, x: 4244, y: 701, name: hestiax}
     ping: hestiax
     say:
       who: Fleet Admiral Hong

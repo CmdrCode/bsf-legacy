@@ -271,6 +271,12 @@ object_event_add(o, 3, 0,
 // command -- the arrow keys, and centreCamera's own GUI_CamMover.
 global.ed_camx = 0;
 global.ed_camy = 0;
+// -1 is "no room latched yet". The hold must never pin at a *stored* number:
+// ed_camx starts at 0, so a room entered with the pointer already outside the
+// window was held at the room's top-left corner for as long as it stayed there.
+// That is indistinguishable from a mission bug -- it cost two false negatives
+// on the EP9 helm lock, and it is the same mistake the lock itself made.
+global.ed_camroom = -1;
 object_event_add(ctr_GUI, 3, 2,
     'var mx, my, hold;' +
     'mx = window_mouse_get_x(); my = window_mouse_get_y();' +
@@ -284,6 +290,22 @@ object_event_add(ctr_GUI, 3, 2,
     'if (keyboard_check(vk_up)) hold = 0;' +
     'if (keyboard_check(vk_down)) hold = 0;' +
     'if (instance_exists(GUI_CamMover)) hold = 0;' +
+    // A room the hold has not seen before is adopted, never imposed on.
+    'if (global.ed_camroom != room) {' +
+    '  global.ed_camroom = room;' +
+    '  global.ed_camx = l_viewx; global.ed_camy = l_viewy; exit;' +
+    '}' +
+    // ...and so is a jump. Edge scroll -- the runaway this hold exists to stop,
+    // because a pointer outside the window reads as parked on the view edge --
+    // moves the camera by at most scrollspeed*zoom per axis per frame. Anything
+    // further in one frame is a deliberate camera command, and the mission's
+    // own `centreCamera(x, y, 0)` is exactly that: instant, so it makes no
+    // GUI_CamMover for the test below to catch. Doubling the step covers a
+    // diagonal (1.41x) with room to spare.
+    'if (point_distance(l_viewx, l_viewy, global.ed_camx, global.ed_camy)' +
+    '    > global.scrollspeed * l_zoom * 2 + 4) {' +
+    '  global.ed_camx = l_viewx; global.ed_camy = l_viewy; exit;' +
+    '}' +
     'if (hold == 0) { global.ed_camx = l_viewx; global.ed_camy = l_viewy; exit; }' +
     'l_viewx = global.ed_camx; l_viewy = global.ed_camy;' +
     'view_xview[0] = global.ed_camx; view_yview[0] = global.ed_camy;');

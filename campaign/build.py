@@ -71,17 +71,33 @@ def load_resources():
     p = os.path.join(RESEARCH, "objects.json")
     if os.path.exists(p):
         objs = {o["name"] for o in json.load(open(p))}
-    idents = set()
+    idents, calls = set(), set()
     p = os.path.join(RESEARCH, "dump", "all_gml.txt")
     if os.path.exists(p):
         txt = open(p, encoding="latin-1").read()
         idents = set(re.findall(r"\b(?:spr|snd|scr|mus|bgm)_[A-Za-z0-9_]+\b", txt))
-    return objs, idents
+        # Every function the game itself calls, which is the only authority on
+        # what exists: the engine's builtin list is not in the tree and the
+        # exe's own script bodies are obfuscated, but a name the exe *calls*
+        # unquestionably resolves. See Emitter.check_calls.
+        calls = set(re.findall(r"\b([a-z_][a-z_0-9]*)\s*\(", txt))
+    return objs, idents, calls
 
-OBJECTS, IDENTS = load_resources()
+OBJECTS, IDENTS, GAME_CALLS = load_resources()
 
-# scripts/builtins the emitter itself uses — verified once in INTERNALS.md
+#: GML's own words, which look like calls and are not.
+GML_KEYWORDS = {"if", "else", "while", "for", "repeat", "with", "switch", "case",
+                "return", "exit", "var", "globalvar", "do", "until", "break",
+                "continue", "then", "not", "div", "mod", "and", "or", "xor"}
+
+#: Functions the emitter calls that the *game* never does, so they cannot be
+#: confirmed from its GML and are vouched for here by hand. Everything else the
+#: emitter writes is checked against what the exe calls — see check_calls.
 KNOWN_CALLS = {
+    # Building a room at runtime is a thing only a mod ever needs to do, so
+    # none of these appear in the game's own code.
+    "room_add", "room_set_code", "room_set_view", "room_set_view_enabled",
+    "room_set_caption", "room_set_background_color",
     "showMessage", "showPing", "showHighlight", "centreCamera",
     "missionFail", "missionSucc", "saveGame", "stopMusic", "bgm_Play",
     # The game's own ship-file loader, as used by the sandbox's spawn-ship.
@@ -97,11 +113,81 @@ KNOWN_CALLS = {
 }
 
 #: `meteors:` when the mission does not say. See the alarm-5 emitter for what
-#: the pair means — `cap` is the density, `interval` only the refill rate. The
-#: editor's mission sheet keeps its own copy of these two numbers (core.js,
-#: `Meteors.DEFAULTS`) so a mission with no block still has something to edit;
-#: they are the same numbers and want changing together.
-METEORS = {"interval": 240, "cap": 8}
+#: each one means — `cap` is the density and `interval` only the refill rate;
+#: `from` and `spread` are the heading, `speed` the pace, `region` the stretch
+#: of room the field is allowed to fall in. The editor's mission sheet keeps its
+#: own copy of these (core.js, `Meteors.DEFAULTS`) so a mission with no block
+#: still has something to edit; they are the same numbers and want changing
+#: together.
+#:
+#: `region` is deliberately absent rather than defaulting to the room: it is the
+#: one key whose presence changes the shape of the emitted GML, and an author
+#: who has not asked for a region should not have to read a clip test that can
+#: never fail.
+METEORS = {"interval": 240, "cap": 8, "from": "right", "spread": 60,
+           "speed": {"min": 1.0, "max": 2.2}}
+
+#: The four edges a rock may enter by, as (heading it travels, axis, does it
+#: come from the high side of that axis). GM7 headings: 0 is +x, 90 is up, and
+#: room y grows downward — so the *top* of the screen is low y, and a rock that
+#: enters there travels 270.
+METEOR_EDGES = {
+    "right":  (180, "x", True),
+    "left":   (0,   "x", False),
+    "top":    (270, "y", False),
+    "bottom": (90,  "y", True),
+}
+
+#: How far past the edge of the *view* a meteor is created, in world units. Not
+#: an author knob — see the alarm-5 emitter for why it is this small.
+METEOR_MARGIN = 64
+
+#: How far ahead of the ship the band starts, how deep it is, and how far to
+#: either side of the ship it reaches. The originals, kept as names now that
+#: four edges read them instead of one.
+METEOR_LEAD, METEOR_DEPTH, METEOR_HALFSPAN = 500, 300, 400
+
+
+#: `interference:` — what the storm is allowed to distort. Two targets, because
+#: they are two different statements: `clouds` is the weather (every ter_Nebula
+#: redrawn additively, and the storm's own gas with it) and `ships` is the hull
+#: echo, which is the only stock effect in the game that makes the *player* look
+#: wrong. Arriving somewhere safe is exactly the moment those part company — the
+#: instruments come back while the storm outside does not stop — so the verb
+#: takes a block naming them as well as the plain on/off that sets both.
+INTERF_TARGETS = ("ships", "clouds")
+
+#: `bounds:` — how far the camera may look. Only the right edge exists because
+#: only the right edge has been needed: EP9 hides Bolthole behind it. The clamp
+#: is written against the same expression BSF clamps `l_viewx` with at
+#: `room_width`, so a bound behaves exactly like a room edge that moved.
+BOUNDS_KEYS = {"x2"}
+
+#: `surge:` — the advancing wall of storm. Defaults are EP9's, because EP9 is
+#: the only mission with one and inventing neutral numbers for a thing nobody
+#: else uses would be inventing them twice.
+#:
+#: `speed` is a floor, never a rate: the front never advances slower, so a ship
+#: that stops is always caught and the wall never visibly *waits* — the tell
+#: that gives rubber-banding away. `slack` is the only concession to framing:
+#: past that gap it closes at `rush` times speed until it is back to `gap`.
+#: Frames a beacon shield stays flared after it stops a rock. Twelve is about
+#: 0.4s: long enough to read as a discharge, short enough that a dense field
+#: leaves the bubble strobing rather than simply lit.
+FLARE = 12
+
+SURGE = {"back": 900, "speed": 1.2, "gap": 500, "slack": 800, "rush": 2.2,
+         "stop": None, "dmg": 2.5, "shield": 88}
+
+
+def gnum(v):
+    """A number as GML source: no trailing `.0`, no float noise.
+
+    `2.2 - 1.0` is 1.2000000000000002 in binary floating point, and emitting
+    that verbatim is both unreadable and a diff that changes when an author
+    nudges a speed by 0.1.
+    """
+    return f"{round(float(v), 4):g}"
 
 
 class Lint:
@@ -286,6 +372,22 @@ class Emitter:
         self.room_slot = m["mission"] - 7        # mission 8 -> act2_room1
         self.storm = Storm(m, lint)
         self.damaged = []                        # damage: fractions, by slot
+        # Resolved once, so the beat verbs and the standing machinery cannot
+        # disagree about a default. `stop` has no neutral value — it is a place
+        # in this room — so it falls back to the room's own right edge, which is
+        # a wall that sweeps everything and is at least honest about it.
+        self.surge = dict(SURGE)
+        if isinstance(m.get("surge"), dict):
+            self.surge.update({k: v for k, v in m["surge"].items() if k in SURGE})
+        if self.surge["stop"] is None:
+            self.surge["stop"] = m["room"]["width"]
+        self.bounds = m.get("bounds") if isinstance(m.get("bounds"), dict) else None
+        # Whether the room *starts* locked is read off the opening beat rather
+        # than given its own key: alarm[2] does not fire for 45 frames, and a
+        # mission that opens with `controls: off` must not leave a second and a
+        # half in which the player can fly away from the scene being set.
+        self.locked = self.onoff(m["beats"][0].get("controls")) == "off"
+        self.uses_controls = any("controls" in b for b in m["beats"])
 
     def tvar(self, s, where):
         self.lint.text(s, where)
@@ -641,7 +743,7 @@ if (global.{g}_imp >= 0) {{
     #: Stored as a list of lines, like the storm mask, so it diffs by the line.
     BEAT_KEYS = {"note", "start", "say", "objective", "gate", "gate_at", "wait",
                  "autosave", "music", "eerie", "meteors", "camera", "spawn",
-                 "ping", "win", "exec", "interference"}
+                 "ping", "win", "exec", "interference", "bounds", "surge", "controls"}
 
     # Verbs whose effect is persistent world state. Only these are replayed when
     # the editor fast-forwards (user event 1) — the rest are *events*, and a seek
@@ -649,7 +751,7 @@ if (global.{g}_imp >= 0) {{
     # player never has to fly to, and write autosaves. See tools/editor/DESIGN.md
     # decision 2.
     SEEKABLE = {"music", "eerie", "meteors", "camera", "spawn", "exec",
-                "interference"}
+                "interference", "bounds", "surge", "controls"}
 
     # An `exec:` line is opaque to the compiler, so it is replayed on a seek on
     # the assumption that raw GML is there to set up the world. When it clearly
@@ -690,16 +792,83 @@ if (global.{g}_imp >= 0) {{
             out.append(("eerie", "sound_loop(snd_eeriesound)"))
         elif self.onoff(b.get("eerie")) == "off":
             out.append(("eerie", "sound_stop(snd_eeriesound)"))
-        if self.onoff(b.get("interference")) == "on":
-            out.append(("interference", f"global.{g}_interf = 1"))
-        elif self.onoff(b.get("interference")) == "off":
-            out.append(("interference", f"global.{g}_interf = 0"))
+        if "interference" in b:
+            v = b["interference"]
+            if isinstance(v, dict):
+                for k in v:
+                    if k not in INTERF_TARGETS:
+                        self.lint.err(f"{where}: interference: unknown target '{k}' "
+                                      f"({', '.join(INTERF_TARGETS)})")
+                    elif self.onoff(v[k]) not in ("on", "off"):
+                        self.lint.err(f"{where}: interference: {k} must be on|off")
+                missing = [k for k in INTERF_TARGETS if k not in v]
+                if missing:
+                    self.lint.warn(f"{where}: interference names "
+                                   f"{', '.join(k for k in INTERF_TARGETS if k in v)} but not "
+                                   f"{', '.join(missing)}, and a block is the complete state — "
+                                   f"so {' and '.join(missing)} will be OFF after this beat. "
+                                   f"Say it outright if that is what you mean")
+            elif self.onoff(v) not in ("on", "off"):
+                self.lint.err(f"{where}: interference must be on|off, or a block "
+                              f"of {'/'.join(INTERF_TARGETS)}")
+            st = self.interf_state(v)
+            out.append(("interference", f"global.{g}_interf = {st['ships']}; "
+                                        f"global.{g}_interfc = {st['clouds']}"))
         if b.get("autosave"):
             out.append(("autosave", "if (global.difficulty != World_Hard) saveGame()"))
         if "camera" in b:
             c = b["camera"]
             out.append(("camera", f"centreCamera({c['x']},{c['y']},{c.get('speed', 60)})"))
             out.append(("camera", f"global.lasteventx = {c['x']}; global.lasteventy = {c['y']}"))
+            # Unlatch the helm lock's camera pin, so a scripted move while the
+            # helm is locked takes the pin with it instead of being dragged
+            # back. Emitted whenever the mission uses `controls:` at all, not
+            # only on the locked beats — a beat cannot know what the flag will
+            # be by the time a seek replays it, and clearing a latch that is
+            # already clear costs nothing.
+            if self.uses_controls:
+                out.append(("camera", f"global.{g}_cll = 0"))
+            # `zoom:` retargets ctr_GUI's own easing rather than assigning the
+            # zoom, so it arrives over the same handful of frames a mouse-wheel
+            # notch does and the player can take it back at any point. Guarded
+            # because a room without a ctr_GUI has no camera to zoom, and an
+            # unguarded `ctr_GUI.l_zoomtar` there is an abort, not a no-op.
+            if "zoom" in c:
+                out.append(("camera", f"if (instance_exists(ctr_GUI)) "
+                                      f"ctr_GUI.l_zoomtar = {gnum(c['zoom'])}"))
+        # The camera limit and the wall are one flag each — everything that
+        # makes them work is standing machinery, emitted once, that reads them.
+        if self.onoff(b.get("bounds")) == "on":
+            out.append(("bounds", f"global.{g}_bounds = 1"))
+        elif self.onoff(b.get("bounds")) == "off":
+            out.append(("bounds", f"global.{g}_bounds = 0"))
+        if self.onoff(b.get("surge")) == "on":
+            # The front starts behind the ship rather than at a fixed x: the
+            # beat that fires it is a place in the story, not a place in the
+            # room, and an author who moves the beat should not have to move a
+            # coordinate with it.
+            out.append(("surge", f"global.{g}_surge = 1; "
+                                 f"global.{g}_sx = global.{g}_ship.x - {self.surge['back']}; "
+                                 f"global.{g}_scol = floor(global.{g}_sx / global.{g}_cellsz)"))
+        elif self.onoff(b.get("surge")) == "off":
+            out.append(("surge", f"global.{g}_surge = 0"))
+        # `controls: off` takes the helm away for a scripted stretch. Two halves:
+        # the ship stops being selectable, which is what stops orders (the
+        # selection loop's own test is `if !l_myship then continue`), and the
+        # camera is pinned by the ctr_GUI hook. A selection already made is
+        # dropped, or the player keeps the ship they picked before the lock.
+        if self.onoff(b.get("controls")) == "off":
+            out.append(("controls", f"global.{g}_ctl = 0; "
+                                    f"if (instance_exists(global.{g}_ship)) global.{g}_ship.l_myship = 0; "
+                                    f"if (instance_exists(ctr_GUI)) ctr_GUI.l_numselected = 0"))
+        elif self.onoff(b.get("controls")) == "on":
+            # `l_holdposition` is released here and nowhere else: the End Step
+            # sets it every frame the helm is locked, so the unlock is the only
+            # moment it can be cleared without the next frame putting it back.
+            out.append(("controls", f"global.{g}_ctl = 1; "
+                                    f"if (instance_exists(global.{g}_ship)) {{ "
+                                    f"global.{g}_ship.l_myship = 1; "
+                                    f"global.{g}_ship.l_holdposition = false; }}"))
         for sp in b.get("spawn", []):
             out.append(("spawn", self.spawn_stmt(sp, where)))
         if "ping" in b:
@@ -827,7 +996,7 @@ for (stx_r = 0; stx_r < global.{g}_rows; stx_r += 1) {{
         # clouds are what hides them, so the fringe is where they are needed.
         create = f"""
 depth = 700;
-l_bolt = 0; l_flash = 0; l_bn = 0;
+l_bolt = 0; l_flash = 0; l_bn = 0; l_wcull = 0;
 var sr, sc, sv, se, pd, pf;
 for (sr = 0; sr < global.{g}_rows; sr += 1) {{
 for (sc = 0; sc < global.{g}_cols; sc += 1) {{
@@ -897,11 +1066,82 @@ if (sv = 2) pf.image_blend = make_color_rgb(255, 130 + random(60), 55 + random(4
         # the thing that dies. `damage()` skips the `l_syshp` debit for anything
         # parented to `ctr_Ship`, so hitting the hull correctly does not also
         # discount the parts hanging off it.
+        sg = self.surge
+        # The wall advances above the `ed_edit` guard and damages below it, so a
+        # mission being written still shows the front moving — it just cannot
+        # kill the author. Filling cells is world state, not damage, and it is
+        # rebuilt from the mask on every entry anyway.
+        surge = f"""
+if (global.{g}_surge = 1) {{
+var wsp, wgap, wcol, wr, wc, wi, wdx, wdy, wsk, wpf;
+wsp = {gnum(sg['speed'])};
+if (instance_exists(global.{g}_ship)) {{
+wgap = global.{g}_ship.x - global.{g}_sx;
+if (wgap > {gnum(sg['slack'])}) wsp = wsp * {gnum(sg['rush'])};
+}}
+global.{g}_sx += wsp;
+if (global.{g}_sx > {gnum(sg['stop'])}) global.{g}_sx = {gnum(sg['stop'])};
+for (wi = 0; wi < global.{g}_nsh; wi += 1) {{
+if (global.{g}_shon[wi] = 0) {{
+if (global.{g}_sx > global.{g}_shx[wi] - global.{g}_shr - 140) global.{g}_shon[wi] = 1;
+}}
+}}
+wcol = floor(global.{g}_sx / global.{g}_cellsz);
+if (global.{g}_scol < 0) global.{g}_scol = 0;
+while (global.{g}_scol <= wcol) {{
+wc = global.{g}_scol;
+global.{g}_scol += 1;
+if (wc < global.{g}_cols) {{
+for (wr = 0; wr < global.{g}_rows; wr += 1) {{
+wsk = 0;
+for (wi = 0; wi < global.{g}_nsh; wi += 1) {{
+if (global.{g}_shon[wi] = 1) {{
+wdx = (wc + 0.5) * global.{g}_cellsz - global.{g}_shx[wi];
+wdy = (wr + 0.5) * global.{g}_cellsz - global.{g}_shy[wi];
+if (wdx * wdx + wdy * wdy < global.{g}_shr * global.{g}_shr) wsk = 1;
+}}
+}}
+if (wsk = 0) {{
+global.{g}_g[wr * global.{g}_cols + wc] = 3;
+if (random(1) < global.{g}_dens) {{
+wpf = instance_create(wc * global.{g}_cellsz + random(global.{g}_cellsz), wr * global.{g}_cellsz + random(global.{g}_cellsz), global.{g}_puffobj);
+wpf.l_wall = 1;
+wpf.image_blend = make_color_rgb(255, 90 + random(70), 40 + random(50));
+}}
+}}
+}}
+}}
+}}
+l_wcull += 1;
+if (l_wcull > 90) {{
+l_wcull = 0;
+with (global.{g}_puffobj) {{ if (l_wall = 1) {{ if (x < global.{g}_sx - 1500) instance_destroy(); }} }}
+}}
+}}
+"""
+        # The beacon shields, and deliberately NOT inside the surge block. They
+        # hold from the first frame: meteors are the thing they visibly stop and
+        # those arrive three beats before the wall does. `shon` is only the
+        # *steady* state — the storm having reached that beacon — and the flare
+        # is independent of it, so a dormant shield is invisible until something
+        # hits it and then flashes.
+        shieldkeep = f"""
+for (kh = 0; kh < global.{g}_nsh; kh += 1) {{
+if (global.{g}_shf[kh] > 0) global.{g}_shf[kh] -= 1;
+khit = collision_circle(global.{g}_shx[kh], global.{g}_shy[kh], global.{g}_shr, obs_Meteor, 0, 1);
+if (khit != noone) {{
+with (khit) instance_destroy();
+global.{g}_shf[kh] = {gnum(FLARE)};
+}}
+}}
+""" if (self.surge["shield"] and self.m.get("gates") and self.m.get("surge")) else ""
         step = f"""
-var sr, sc, sv;
+var sr, sc, sv, kh, khit;
 if (global.ed_pause) exit;
 if (l_bolt > 0) l_bolt -= 1;
 if (l_flash > 0) l_flash -= 1;
+{surge}
+{shieldkeep}
 if (global.ed_edit) exit;
 if (instance_exists(global.{g}_ship)) {{
 with (ShipSection) {{
@@ -912,6 +1152,7 @@ if (sr >= 0) {{ if (sr < global.{g}_rows) {{ if (sc >= 0) {{ if (sc < global.{g}
 sv = global.{g}_g[sr * global.{g}_cols + sc];
 if (sv = 1) damage(global.{g}_d1, id);
 if (sv = 2) damage(global.{g}_d2, id);
+if (sv = 3) damage(global.{g}_d3, id);
 }} }} }} }}
 }}
 }}
@@ -921,6 +1162,7 @@ if (sr >= 0) {{ if (sr < global.{g}_rows) {{ if (sc >= 0) {{ if (sc < global.{g}
 sv = global.{g}_g[sr * global.{g}_cols + sc];
 if (sv = 1) damage(global.{g}_d1, global.{g}_ship);
 if (sv = 2) damage(global.{g}_d2, global.{g}_ship);
+if (sv = 3) damage(global.{g}_d3, global.{g}_ship);
 }} }} }} }}
 }}
 """
@@ -1001,6 +1243,7 @@ image_yscale = 1 + ran;
 image_angle = random(360);
 image_alpha = 0.13 + random(0.15);
 image_blend = make_color_rgb(180 + random(75), 26 + random(46), 26 + random(34));
+l_wall = 0;
 l_lo = image_alpha;
 l_hi = image_alpha + 0.15;
 l_glow = 0.004 + random(0.006);
@@ -1114,9 +1357,542 @@ draw_sprite_ext(sprite_index,image_index,x,y,image_xscale,image_yscale,image_ang
                 f"meant to announce that spawn, {how} — a fixed pair does not move "
                 f"when the spawn does")
 
+    def surge_init(self):
+        """Per-entry state for the wall, in the controller's Create.
+
+        Everything here resets on a mission entry, which a re-apply also is, so
+        a wall left halfway down the lane by the last run does not greet the
+        next one already closed. The shield table is built from `gates:` rather
+        than from a list of its own: the beacons *are* the gates, and a second
+        list would be one more thing to keep in step when a beacon moves.
+        """
+        g, sg = self.gid, self.surge
+        gates = (self.m.get("gates", [])
+                 if (sg["shield"] and self.m.get("surge")) else [])
+        L = [f"global.{g}_surge = 0; global.{g}_sx = 0; global.{g}_scol = 0;",
+             # Re-asserted on entry, not just declared on load: the reveal turns
+             # the limit off, and a mission re-entered after that would start
+             # with Bolthole already in view.
+             f"global.{g}_bounds = 1;" if self.bounds else "",
+             f"global.{g}_d3 = {gnum(sg['dmg'])};",
+             f"global.{g}_shr = {gnum(sg['shield'])};",
+             f"global.{g}_nsh = {len(gates)};"]
+        for i, gt in enumerate(gates):
+            L.append(f"global.{g}_shx[{i}] = {gt['x']}; global.{g}_shy[{i}] = {gt['y']}; "
+                     f"global.{g}_shon[{i}] = 0; global.{g}_shf[{i}] = 0;")
+        return "\n".join(L)
+
+    def bounds_hook(self):
+        """The camera limit, appended to ctr_GUI's own End Step.
+
+        ⚠ Appended, and guarded so it is appended exactly once per session.
+        `object_event_clear` is not an option on a stock object — clearing
+        ctr_GUI's End Step would take the game's camera, the HUD anchoring and
+        `mods/aspect.gml`'s widescreen correction with it. So the hook is added
+        once and everything it does is read from globals, which a re-apply is
+        free to rewrite.
+
+        The clamp is BSF's own room-edge expression with `room_width` swapped
+        for the bound, so a limit behaves exactly like a room that got shorter:
+        the minimap column is discounted the same way, which is what makes the
+        *clear* battlefield stop on the line rather than the view rectangle.
+
+        ⚠ Published as a delta, not an assignment, for the same reason
+        aspect.gml does it: `view_xview[0]` also carries this frame's screen
+        shake, and assigning the clamp would quietly cancel it.
+        """
+        if not self.bounds and not self.uses_controls:
+            return ""
+        g, slot = self.gid, self.room_slot
+        # The camera half of `controls:`, and the ship half with it.
+        #
+        # ⚠ **The pin latches from the live camera, never from a stored number.**
+        # It used to read `global.<g>_clx`, initialised to 0 by the load-time
+        # guard below — so a room that *starts* locked pinned the view to the
+        # room's own top-left corner and held it there. EP9 opens with
+        # `centreCamera(260,1000,0)` in Create and the player saw a patch of
+        # cloud 1000 units above the ship: the pin undid the centring on the
+        # very next End Step, every frame, for the whole introduction.
+        #
+        # `_cll` is the latch. 0 means *tracking* — follow the camera wherever
+        # it goes and do not pin — and it is cleared on mission entry and by
+        # every `camera:` verb. Tracking ends the first frame no GUI_CamMover
+        # exists, which is what makes one rule cover both kinds of scripted
+        # move: `speed: 0` is instant and latches immediately, a slow pan keeps
+        # tracking until the mover dies and then latches on the destination.
+        # Releasing the lock leaves the camera where the script put it rather
+        # than snapping back to where it was grabbed.
+        #
+        # Zoom is deliberately not pinned: it changes what you see without
+        # letting you go anywhere, and pinning it would fight the reveal.
+        #
+        # The ship half is belt-and-braces. `l_myship = 0` is what stops the
+        # player *selecting* the hull, and selection is what every order path
+        # goes through — but a lock that rests on one flag on one instance is
+        # one missed path from being no lock at all, and the failure is
+        # invisible until someone flies out of a cutscene. So while the helm is
+        # locked the ship is also held, using the engine's own Stop Action —
+        # the one the S key runs — rather than an invented equivalent.
+        #
+        # ⚠ **A cleared move order is `l_movetox = x`, not `l_movetox = -4`.**
+        # `l_movetox > -4` is only how the engine *tests* for a live order; the
+        # value itself is a world coordinate, so writing -4 does not clear the
+        # order, it issues one to the top-left corner of the room — and
+        # `l_holdposition` does not stop a ship that already has somewhere to
+        # be. EP9's Hestia flew from (260, 1000) to the corner during its own
+        # locked introduction. Pointing the destination at the hull's own
+        # position is what the engine does everywhere it wants a ship to stay
+        # put, and it cannot move anything.
+        #
+        # Released on unlock, which is the only place that can clear the hold:
+        # the End Step re-applies it every frame the helm is locked.
+        ctlhook = f"""
+object_event_add(ctr_GUI, 3, 2,
+    'if (room = global.act2_room{slot}) {{' +
+    'if (global.{g}_ctl = 0) {{' +
+    'if (global.{g}_cll = 0) {{' +
+    'global.{g}_clx = l_viewx; global.{g}_cly = l_viewy;' +
+    'if (!instance_exists(GUI_CamMover)) global.{g}_cll = 1;' +
+    '}} else {{' +
+    'view_xview[0] += global.{g}_clx - l_viewx; view_yview[0] += global.{g}_cly - l_viewy;' +
+    'l_viewx = global.{g}_clx; l_viewy = global.{g}_cly;' +
+    '}}' +
+    'if (instance_exists(global.{g}_ship)) with (global.{g}_ship) {{' +
+    'l_movetox = x; l_movetoy = y; l_faceto = -1;' +
+    'l_target = -4; l_facetarg = -4; alarm[8] = 0; l_holdposition = true;' +
+    '}}' +
+    '}} else {{' +
+    'global.{g}_clx = l_viewx; global.{g}_cly = l_viewy; global.{g}_cll = 0;' +
+    '}}' +
+    '}}');
+""" if self.uses_controls else ""
+        limit = f"""
+// ------------------------------------------------------- the camera limit
+if (!variable_global_exists('{g}_ctl')) global.{g}_ctl = 1;
+if (!variable_global_exists('{g}_clx')) {{ global.{g}_clx = 0; global.{g}_cly = 0; }}
+if (!variable_global_exists('{g}_cll')) global.{g}_cll = 0;
+if (!variable_global_exists('{g}_bounds')) global.{g}_bounds = 0;
+if (!variable_global_exists('{g}_bx2')) global.{g}_bx2 = {self.bounds.get("x2", self.m["room"]["width"])};
+if (!variable_global_exists('{g}_boundhook')) {{
+global.{g}_boundhook = 1;
+object_event_add(ctr_GUI, 3, 2,
+    'if (global.{g}_bounds = 1) {{' +
+    'if (room = global.act2_room{slot}) {{' +
+    'var blim;' +
+    'blim = global.{g}_bx2 + GUI_MinimapSize * l_zoom - view_wview[0];' +
+    'if (blim < 0) blim = 0;' +
+    'if (l_viewx > blim) {{ view_xview[0] += blim - l_viewx; l_viewx = blim; }}' +
+    '}}' +
+    '}}');
+{ctlhook}
+// The minimap half. Without it the camera limit hides nothing — ctr_GUI blips
+// every ctr_Ship in the room, so a station the player cannot look at is still a
+// cluster of squares in the corner. It is also what stops the limit reading as
+// a bug: a camera that silently refuses to pan is broken, a camera that stops
+// at a line the map draws is a door.
+//
+// Appended to Draw so it lands on top of the minimap ctr_GUI just drew.
+//
+// ⚠ The rect is re-derived here rather than read off ctr_GUI. `mapx1`, `mapx2`
+// and `mapsizew` are ctr_GUI instance variables in the stock source — assigned
+// in its Create and refreshed in its End Step — and reading them from an
+// appended Draw action is still "Unknown variable mapx1", 1321 times in one
+// sitting. Whatever owns them, it is not the instance this action runs on.
+//
+// So the geometry comes from what is legible from anywhere: the minimap is
+// GUI_MinimapSize * global.l_zoom square, pinned to the top-right corner of the
+// view, and a world x lands at that same fraction of it. That is the stock
+// transform written out rather than borrowed, and it needs nothing but the view
+// and the room.
+object_event_add(ctr_GUI, 8, 0,
+    'if (global.{g}_bounds = 1) {{' +
+    'if (room = global.act2_room{slot}) {{' +
+    'var mw, mx1, mx2, my1, fx;' +
+    'mw = GUI_MinimapSize * global.l_zoom;' +
+    'mx1 = view_xview[0] + view_wview[0] - mw;' +
+    'mx2 = view_xview[0] + view_wview[0] - 1;' +
+    'my1 = view_yview[0];' +
+    'fx = mx1 + global.{g}_bx2 * mw / room_width;' +
+    'if (fx < mx2) {{' +
+    'draw_set_color(c_black);' +
+    'draw_set_alpha(0.92);' +
+    'draw_rectangle(fx, my1, mx2, my1 + mw, 0);' +
+    'draw_set_alpha(1);' +
+    'draw_set_color($00FF00);' +
+    'draw_line(fx, my1, fx, my1 + mw);' +
+    '}}' +
+    '}}' +
+    '}}');
+}}
+global.{g}_bx2 = {self.bounds.get("x2", self.m["room"]["width"])};
+""" if self.bounds else f"""
+// ------------------------------------------------ the helm lock (camera half)
+if (!variable_global_exists('{g}_ctl')) global.{g}_ctl = 1;
+if (!variable_global_exists('{g}_clx')) {{ global.{g}_clx = 0; global.{g}_cly = 0; }}
+if (!variable_global_exists('{g}_cll')) global.{g}_cll = 0;
+if (!variable_global_exists('{g}_boundhook')) {{
+global.{g}_boundhook = 1;
+{ctlhook}
+}}
+"""
+        return limit
+
+    def meteor_region(self):
+        """`meteors.region:` as a whole rect, or None when there is none.
+
+        A corner the author left out comes from the room, so a mission that
+        only cares about one edge — EP9 wants "not past the gate batteries" and
+        nothing else — writes only that edge and does not have to restate the
+        room to get it.
+        """
+        r = (self.m.get("meteors") or {}).get("region")
+        if not isinstance(r, dict) or not r:
+            # `region: {}` is the shape the editor leaves behind when the last
+            # corner is cleared, and it means what no region at all means.
+            return None
+        w, h = self.m["room"]["width"], self.m["room"]["height"]
+        # A corner that is not a number is not a corner. check_meteors reports
+        # it; taking the room bound here keeps the emitted GML compilable so
+        # that report is what the author sees.
+        num = lambda k, d: r[k] if isinstance(r.get(k), (int, float)) else d  # noqa: E731
+        return {"x1": num("x1", 0), "y1": num("y1", 0),
+                "x2": num("x2", w), "y2": num("y2", h)}
+
+    def check_meteors(self):
+        """The `meteors:` block, before any of it reaches GML.
+
+        Every one of these is silent at runtime if it gets through. A bad `from`
+        emits a heading of `None`, which is a GM7 syntax error and therefore an
+        event that simply never runs; an inverted region emits a clip test that
+        can never pass, which is a field that never spawns and looks exactly
+        like the mod failing to load.
+        """
+        met = self.m.get("meteors")
+        if met is None:
+            return
+        if not isinstance(met, dict):
+            self.lint.err("meteors: must be a block of settings")
+            return
+        known = set(METEORS) | {"region"}
+        for k in met:
+            if k not in known:
+                self.lint.err(f"meteors: unknown key '{k}' "
+                              f"(known: {', '.join(sorted(known))})")
+
+        edge = met.get("from", METEORS["from"])
+        if edge not in METEOR_EDGES:
+            self.lint.err(f"meteors: from '{edge}' is not one of "
+                          f"{', '.join(sorted(METEOR_EDGES))} — it names the screen "
+                          f"edge the rocks come IN by, not the way they travel")
+
+        spread = met.get("spread", METEORS["spread"])
+        if not isinstance(spread, (int, float)):
+            self.lint.err(f"meteors: spread '{spread}' is not a number")
+        elif not 0 <= spread <= 180:
+            # Past 180 the fan reaches back past the edge it entered by, so some
+            # rocks turn round and leave without ever crossing the view.
+            self.lint.err(f"meteors: spread {spread} is outside 0-180 degrees")
+
+        sp = met.get("speed", {})
+        if not isinstance(sp, dict):
+            self.lint.err("meteors: speed must be a block with min: and max:")
+        else:
+            for k in sp:
+                if k not in METEORS["speed"]:
+                    self.lint.err(f"meteors.speed: unknown key '{k}' (min, max)")
+            lo = sp.get("min", METEORS["speed"]["min"])
+            hi = sp.get("max", METEORS["speed"]["max"])
+            if not isinstance(lo, (int, float)) or not isinstance(hi, (int, float)):
+                self.lint.err("meteors.speed: min and max must be numbers")
+            elif lo <= 0:
+                # speed 0 is not a slow rock, it is a rock that never arrives —
+                # and obs_Meteor's own lifetime alarm divides by speed.
+                self.lint.err(f"meteors.speed: min {lo} must be above 0")
+            elif hi < lo:
+                self.lint.err(f"meteors.speed: max {hi} is below min {lo}")
+
+        raw = met.get("region")
+        if raw is not None and not isinstance(raw, dict):
+            self.lint.err("meteors: region must be a block of x1/y1/x2/y2")
+        elif isinstance(raw, dict):
+            for k, v in raw.items():
+                if k not in ("x1", "y1", "x2", "y2"):
+                    self.lint.err(f"meteors.region: unknown key '{k}' (x1, y1, x2, y2)")
+                elif not isinstance(v, (int, float)):
+                    self.lint.err(f"meteors.region: {k} '{v}' is not a number")
+            r = self.meteor_region()
+            w, h = self.m["room"]["width"], self.m["room"]["height"]
+            if r["x2"] <= r["x1"] or r["y2"] <= r["y1"]:
+                self.lint.err(f"meteors.region: ({r['x1']}, {r['y1']}) to "
+                              f"({r['x2']}, {r['y2']}) is inside out or empty — "
+                              f"no rock can ever be placed in it")
+            elif r["x1"] > w or r["y1"] > h or r["x2"] < 0 or r["y2"] < 0:
+                self.lint.err(f"meteors.region: ({r['x1']}, {r['y1']}) to "
+                              f"({r['x2']}, {r['y2']}) is outside the {w}x{h} room")
+
+    def check_calls(self, gml):
+        """Every function the emitted GML calls has to exist.
+
+        ⚠ **An unknown function in GM7 is a compilation error, and it fails the
+        whole code action rather than the call.** `draw_circle_colour` — the
+        British spelling of a function the engine spells `draw_circle_color`,
+        and which the game itself uses thirty-four times — took out the entire
+        controller Draw event: no lightning, no interference, no shields, and
+        the mission room never finished loading. Six letters, and the only
+        symptom was a room that would not open.
+
+        The authority is the game's own GML. A name the exe *calls* resolves,
+        whatever the manual says; a name it never calls might still be real, and
+        those are vouched for by hand in KNOWN_CALLS. That asymmetry is the
+        point — this catches typos and wrong spellings, which is the whole
+        failure mode, and asks for one line of human judgement per genuinely new
+        builtin.
+        """
+        if not GAME_CALLS:                    # no dump: nothing to check against
+            return
+        # ⚠ Comments first, or prose reads as code: the section header
+        # `// the helm lock (camera half)` matches the call pattern and fails
+        # the build on a function named `lock`. That header is emitted only when
+        # a mission uses `controls:` *without* `bounds:`, which is why it took a
+        # mission with the camera limit removed to find it.
+        #
+        # Line-start only, deliberately. Dialogue is emitted as quoted strings
+        # on their own lines, and a line of it containing `//` would otherwise
+        # have the rest of the line stripped with it — turning this gate quietly
+        # into a pass. Every comment this emitter writes begins a line, so the
+        # narrow rule costs nothing. String *contents* are still scanned, and
+        # must be: the appended-event code lives inside `'...'` and is compiled.
+        code = re.sub(r"(?m)^[ \t]*//.*$", "", gml)
+        seen = set(re.findall(r"\b([a-z_][a-z_0-9]*)\s*\(", code))
+        for name in sorted(seen - GML_KEYWORDS - GAME_CALLS - KNOWN_CALLS):
+            self.lint.err(f"emitted GML calls '{name}', which the game never calls and "
+                          f"KNOWN_CALLS does not vouch for. In GM7 an unknown function "
+                          f"fails the whole code action, so check the spelling "
+                          f"(the engine is American: _color, not _colour) and add it to "
+                          f"KNOWN_CALLS if it is real")
+
+    @staticmethod
+    def interf_state(v):
+        """`interference:` as {ships, clouds}, each 0 or 1.
+
+        `on`/`off` set both — that is the whole vocabulary a mission needed
+        while the effect was one thing, and every mission written against it
+        keeps meaning exactly what it meant. A block names the state it wants:
+
+            interference: {ships: off, clouds: on}
+
+        ⚠ A block is the **complete** state, so a target it does not name is
+        off, not left alone. `{ships: off}` therefore stops the weather too.
+        That is the readable half of the trade — a beat says what the effect is
+        after it, never a diff against whatever came before — and check_beats
+        warns rather than letting it be silent.
+        """
+        if isinstance(v, dict):
+            return {k: 1 if Emitter.onoff(v.get(k)) == "on" else 0
+                    for k in INTERF_TARGETS}
+        on = 1 if Emitter.onoff(v) == "on" else 0
+        return {k: on for k in INTERF_TARGETS}
+
+    def check_bounds_surge(self):
+        """`bounds:` and `surge:`, before either reaches GML.
+
+        Both fail silently in the game if they get through. A bound past the
+        room clamps nothing and looks like the feature was never wired up; a
+        surge with no storm object has nowhere to live and simply never
+        advances; a `stop` behind where the front starts leaves a wall that is
+        already parked before it is lit.
+        """
+        m, w = self.m, self.m["room"]["width"]
+        bd = m.get("bounds")
+        if bd is not None:
+            if not isinstance(bd, dict):
+                self.lint.err("bounds: must be a block (x2:)")
+            else:
+                for k, v in bd.items():
+                    if k not in BOUNDS_KEYS:
+                        self.lint.err(f"bounds: unknown key '{k}' "
+                                      f"({', '.join(sorted(BOUNDS_KEYS))})")
+                    elif not isinstance(v, (int, float)):
+                        self.lint.err(f"bounds: {k} '{v}' is not a number")
+                x2 = bd.get("x2")
+                if isinstance(x2, (int, float)):
+                    if x2 >= w:
+                        self.lint.warn(f"bounds: x2 {x2} is at or past the room's own "
+                                       f"right edge ({w}), so it clamps nothing")
+                    elif x2 < m["player"]["x"]:
+                        self.lint.err(f"bounds: x2 {x2} is left of the player start "
+                                      f"({m['player']['x']}) — the ship begins outside "
+                                      f"the camera's reach")
+        sg = m.get("surge")
+        if sg is None:
+            return
+        if not isinstance(sg, dict):
+            self.lint.err("surge: must be a block of settings")
+            return
+        for k, v in sg.items():
+            if k not in SURGE:
+                self.lint.err(f"surge: unknown key '{k}' ({', '.join(sorted(SURGE))})")
+            elif not isinstance(v, (int, float)):
+                self.lint.err(f"surge: {k} '{v}' is not a number")
+        if not self.storm.any():
+            self.lint.err("surge: needs a storm: block — the wall is storm, and it "
+                          "advances from the storm object's own Step")
+        r = self.surge
+        if r["speed"] <= 0:
+            self.lint.err(f"surge: speed {r['speed']} must be above 0 — a wall that "
+                          f"does not advance never closes anything")
+        if r["gap"] > r["slack"]:
+            self.lint.err(f"surge: gap {r['gap']} is past slack {r['slack']}, so the "
+                          f"catch-up is always on and the front never settles")
+        if r["stop"] > w:
+            self.lint.warn(f"surge: stop {r['stop']} is past the {w}-wide room")
+        # Which beat lights it, and where the ship is by then, is the only way to
+        # know whether `stop` is even reachable.
+        lit = next((i for i, b in enumerate(m["beats"])
+                    if self.onoff(b.get("surge")) == "on"), None)
+        if lit is None and sg:
+            self.lint.warn("surge: is configured but no beat turns it on")
+
+    def meteor_spawner(self, g):
+        """Alarm 5: one `obs_Meteor` per firing, entering by the author's edge.
+
+        `cap` and `interval` are the density between them, and `cap` is the one
+        that sets it: a rock lives until it leaves the room (obs_Meteor's own
+        alarm 2 computes the time to the edge from its velocity and alarm 1
+        destroys it there), which for a rock crossing EP9's 5000-unit room at
+        ~1.6 units/step is around a minute — long enough that the population
+        saturates at `cap` and stays there. `interval` is only the refill rate:
+        one rock per alarm, so an empty field reaches `cap` after cap*interval
+        frames and it wants to be well under the lifetime or the cap is never
+        reached. Scale the two together and the field gets denser at the same
+        ramp — 6x density is cap*6 with interval/6.
+
+        ---- where a rock is put
+
+        Two things decide it, and they are unioned:
+
+        * a band `LEAD` ahead of the ship, `DEPTH` deep and `HALFSPAN` to either
+          side of it — the ship is what the rocks are aimed at, and that stays
+          true however the player has moved the camera;
+        * the live view rectangle, pushed out by `MARGIN` — because the band
+          alone is measured in fixed world units and **the view is not a fixed
+          size**. `mods/resolution.gml` authors every view as `floor(768*w/h)`
+          by 768 world units and ctr_GUI scales both by `l_zoom`, so at 16:9 it
+          is 1365 wide: `x + 500` is *inside* the right-hand edge of the screen,
+          and rocks used to be created in front of the player and pop into
+          existence there. Reading the view is what makes the placement correct
+          at every aspect and zoom rather than at 1024x768 only.
+
+        `MARGIN` is small on purpose. spr_Meteor is 32x32 about its centre and
+        `image_*scale` tops out at 0.9, so 64 units clears the sprite four times
+        over; anything larger is off-screen travel that costs a slot against
+        `cap` while showing the player nothing. Density is unaffected either
+        way: the population saturates at `cap`, and time on screen is a property
+        of the crossing, not of where the crossing began.
+
+        ---- which edge
+
+        `from:` names the edge rocks come IN by and nothing else follows from
+        it: the heading, which axis the band lies along, and which side of the
+        view it sits on all fall out of `METEOR_EDGES`. Only the four cardinals
+        are offered, and that is a real limit rather than an oversight — a
+        diagonal heading wants the band spread across *two* edges in proportion
+        to their projected width, or the rocks bunch in the corner between them,
+        and no mission has asked for that.
+
+        ---- and where it is allowed to
+
+        `region:` clips the band. Perpendicular to the drift that is exact: it
+        is the stretch of the edge rocks may appear along, and when the view
+        stops overlapping it the span goes empty and the field dries up on its
+        own. **Along** the drift it cannot be exact — the band's position on
+        that axis is precisely what keeps a spawn off-screen, so it is not the
+        author's to move — and there the region is applied to the view instead:
+        no rocks at all while the player is looking somewhere the region does
+        not reach.
+        """
+        # Every read here falls back to the default rather than trusting the
+        # file, because check_meteors has already *reported* a bad value and
+        # this still has to reach the end of the build to print that report —
+        # a KeyError here would replace a legible lint error with a traceback.
+        met = self.m.get("meteors") or {}
+        interval = met.get("interval", METEORS["interval"])
+        cap = met.get("cap", METEORS["cap"])
+        heading, axis, high = (METEOR_EDGES.get(met.get("from"))
+                               or METEOR_EDGES[METEORS["from"]])
+        spread = met.get("spread", METEORS["spread"])
+        if not isinstance(spread, (int, float)):
+            spread = METEORS["spread"]
+        sp = dict(METEORS["speed"])
+        if isinstance(met.get("speed"), dict):
+            sp.update({k: v for k, v in met["speed"].items()
+                       if k in sp and isinstance(v, (int, float))})
+        region = self.meteor_region()
+        perp = "y" if axis == "x" else "x"
+
+        lo = {"x": "view_xview[0]", "y": "view_yview[0]"}
+        hi = {"x": "view_xview[0] + view_wview[0]", "y": "view_yview[0] + view_hview[0]"}
+
+        # The band sits outside the view on the side the rocks come from, and
+        # grows away from it — never back across the edge it is clearing.
+        if high:
+            base = f"max(p{axis} + {METEOR_LEAD}, {hi[axis]} + {METEOR_MARGIN})"
+            along = f"ba + random({METEOR_DEPTH})"
+        else:
+            base = f"min(p{axis} - {METEOR_LEAD}, {lo[axis]} - {METEOR_MARGIN})"
+            along = f"ba - random({METEOR_DEPTH})"
+        across = "sl + random(sh - sl)"
+        xy = (along, across) if axis == "x" else (across, along)
+
+        # Only the halves of the region that can actually bite are emitted. A
+        # region is a rect but an author rarely means all four sides of one —
+        # EP9 means "not past x 2830" and takes the room for the rest — and a
+        # clip against the room edge is a test that cannot fail, sitting in the
+        # generated file looking like a rule.
+        clip, gate, ungate, span, unspan = "", "", "", "", ""
+        if region:
+            room = {"x": self.m["room"]["width"], "y": self.m["room"]["height"]}
+            if region[perp + "1"] > 0 or region[perp + "2"] < room[perp]:
+                clip = (f"sl = max(sl, {region[perp + '1']});"
+                        f" sh = min(sh, {region[perp + '2']});\n")
+                # Without the clip the span is at least 2*HALFSPAN wide, so the
+                # test goes with it.
+                span, unspan = "if (sh > sl) {\n", "}\n"
+            if region[axis + "1"] > 0 or region[axis + "2"] < room[axis]:
+                gate = (f"if ({lo[axis]} < {region[axis + '2']}) {{\n"
+                        f"if ({hi[axis]} > {region[axis + '1']}) {{\n")
+                ungate = "}\n}\n"
+
+        head = gnum((heading - spread / 2) % 360)
+        aim = head if not spread else f"{head} + random({gnum(spread)})"
+        pace = (gnum(sp["min"]) if sp["max"] <= sp["min"] else
+                f"{gnum(sp['min'])} + random({gnum(sp['max'] - sp['min'])})")
+
+        return f"""
+if (global.{g}_meteors = 1) {{
+if (instance_number(obs_Meteor) < {cap}) {{
+if (instance_exists(global.{g}_ship)) {{
+var mm, px, py, ba, sl, sh;
+px = global.{g}_ship.x; py = global.{g}_ship.y;
+ba = {base};
+sl = min(p{perp} - {METEOR_HALFSPAN}, {lo[perp]});
+sh = max(p{perp} + {METEOR_HALFSPAN}, {hi[perp]});
+{clip}{span}{gate}mm = instance_create({xy[0]}, {xy[1]}, obs_Meteor);
+mm.direction = {aim};
+mm.speed = {pace};
+mm.image_xscale = 0.5 + random(0.4);
+mm.image_yscale = mm.image_xscale;
+{ungate}{unspan}}}
+}}
+alarm[5] = {interval};
+}}
+"""
+
     def build(self):
         m, g, lint = self.m, self.gid, self.lint
         self.check_bounds()
+        self.check_meteors()
+        self.check_bounds_surge()
         numbered = self.number_beats()
 
         # One pass over the beats; both ladders read the same statements.
@@ -1247,12 +2023,20 @@ l_temp = -4;
 global.ed_beat = -1; global.ed_beatseq += 1;
 global.{g}_won = 0; global.{g}_failed = 0; global.{g}_meteors = 0;
 global.{g}_interf = 0;
+global.{g}_interfc = 0;
+{self.surge_init()}
 {shipinit}
 {dmginit}
 global.World_MaxRangeSqr = sqr(World_MaxRange);
 stopMusic();
 s = instance_create({p['x']},{p['y']},{p['object']});
 global.{g}_ship = s;
+global.{g}_ctl = {0 if self.locked else 1};
+if (global.{g}_ctl = 0) s.l_myship = 0;
+/* Unlatched on every entry, so the pin takes the camera this run actually has
+   rather than one a previous run left in the global. centreCamera below is what
+   it will latch onto. */
+global.{g}_cll = 0;
 with (ShipSection) {{ if (l_owner = global.{g}_ship) l_hp = l_hp * {p.get('damage', 1)}; }}
 repeat ({neb}) {{ instance_create(random(room_width),random(room_height),ter_Nebula); }}
 {f"instance_create(0,0,global.{g}_stormobj);" if storm.any() else ""}
@@ -1273,42 +2057,7 @@ missionFail({fail_t});
 }}
 }}
 """
-        # -- alarm 5: meteor spawner
-        #
-        # Two numbers, and between them they are the density. `cap` is the one
-        # that sets it: a meteor lives until it leaves the room (obs_Meteor's own
-        # alarm 2 computes the time to the edge from its velocity and alarm 1
-        # destroys it there), which for a rock crossing EP9's 5000-unit room at
-        # ~1.6 units/step is around a minute — long enough that the population
-        # saturates at `cap` and stays there. `interval` is only the refill rate:
-        # one rock per alarm, so an empty field reaches `cap` after cap*interval
-        # frames and it wants to be well under the lifetime or the cap is never
-        # reached. Scale the two together and the field gets denser at the same
-        # ramp — 6x density is cap*6 with interval/6.
-        #
-        # The band is ahead of the ship (x + 500..800) and one view tall
-        # (y ± 400), and `direction` 150..210 walks the rocks back through it, so
-        # the author's density is what arrives head-on, not what exists somewhere
-        # in the room.
-        met = m.get("meteors", {})
-        interval = met.get("interval", METEORS["interval"])
-        cap = met.get("cap", METEORS["cap"])
-        meteor = f"""
-if (global.{g}_meteors = 1) {{
-if (instance_number(obs_Meteor) < {cap}) {{
-if (instance_exists(global.{g}_ship)) {{
-var mm, px, py;
-px = global.{g}_ship.x; py = global.{g}_ship.y;
-mm = instance_create(px + 500 + random(300), py - 400 + random(800), obs_Meteor);
-mm.direction = 150 + random(60);
-mm.speed = 1 + random(1.2);
-mm.image_xscale = 0.5 + random(0.4);
-mm.image_yscale = mm.image_xscale;
-}}
-}}
-alarm[5] = {interval};
-}}
-"""
+        meteor = self.meteor_spawner(g)
         # -- alarm 6: hold the damaged hulls where the author put them
         #
         # See damage_stmt. The engine heals any section under half maximum once
@@ -1383,17 +2132,71 @@ draw_set_alpha(1);
 draw_set_blend_mode(bm_normal);
 }}
 }}""" if storm.any() else ""
+        # The beacon shields. Drawn from the controller (depth -9) rather than
+        # from the storm object (700), so the bubble reads as being *in front of*
+        # the gas that is parting around it rather than lost inside it — the
+        # same reasoning, inverted, that puts the lightning bolt behind it.
+        #
+        # A rim rather than a disc: `draw_circle_color` with a black centre
+        # under `bm_add` contributes nothing in the middle and everything at the
+        # edge, which is what a shield looks like in this game and also leaves
+        # the hull it is protecting legible through it.
+        #
+        # ⚠ Both alphas are set *before* their own draw. Alpha in GM7 is global
+        # draw state rather than an argument, so the fill inherited whatever the
+        # last thing to draw had left behind — 1.0 — and the first build put an
+        # opaque milky ball over the beacon it was supposed to be protecting.
+        # The fill is a tenth of the way up; the rim is what you actually see.
+        #
+        # ⚠ `_color`, not `_colour`. GM7's drawing API is American throughout,
+        # and an unknown function is a *compilation* error: it does not fail the
+        # call, it fails the entire code action. The first build of this drew
+        # nothing at all — no bolt, no interference, no shields — and the mission
+        # room never finished loading.
+        #
+        # ⚠ GM7 draws a circle from 24 segments by default, which at 150 world
+        # units is a visible polygon. 48 is the cheapest number that reads as
+        # round at the zoom the reveal uses.
+        shields = f"""
+if (global.{g}_nsh > 0) {{
+draw_set_circle_precision(48);
+draw_set_blend_mode(bm_add);
+for (i = 0; i < global.{g}_nsh; i += 1) {{
+shf = global.{g}_shf[i] / {gnum(FLARE)};
+shs = 0;
+if (global.{g}_shon[i] = 1) shs = 1;
+if (shs + shf > 0) {{
+shx = global.{g}_shx[i]; shy = global.{g}_shy[i]; shr = global.{g}_shr;
+if (shx > vx - shr) {{ if (shx < vx + vw + shr) {{
+if (shy > vy - shr) {{ if (shy < vy + vh + shr) {{
+shp = 0.55 + 0.45 * sin(current_time / 260 + i * 1.7);
+shr = shr + shf * 7;
+draw_set_alpha(shs * (0.10 + 0.06 * shp) + 0.30 * shf);
+draw_circle_color(shx, shy, shr, make_color_rgb(0, 0, 0), make_color_rgb(30 + 150 * shf, 90 + 70 * shp + 110 * shf, 150 + 90 * shp + 60 * shf), 0);
+draw_set_color(make_color_rgb(165 + 80 * shf, 225, 255));
+draw_set_alpha(shs * (0.40 + 0.28 * shp) + 0.55 * shf);
+draw_circle(shx, shy, shr, true);
+draw_set_alpha(1);
+}} }} }} }}
+}}
+}}
+draw_set_blend_mode(bm_normal);
+}}
+""" if (self.surge["shield"] and self.m.get("gates") and self.m.get("surge")) else ""
         cdraw = f"""
-var vx, vy, vw, vh, i;
-vx = view_xview[0]; vy = view_yview[0]; vw = view_wview[0]; vh = view_hview[0];{bolt}
-if (global.{g}_interf = 0) exit;
+var vx, vy, vw, vh, i, shx, shy, shr, shp, shf, shs;
+vx = view_xview[0]; vy = view_yview[0]; vw = view_wview[0]; vh = view_hview[0];{bolt}{shields}
+if (global.{g}_interfc = 1) {{
 draw_set_blend_mode(bm_add);
 with (ter_Nebula) {{
 draw_sprite_ext(sprite_index,image_index,x,y,image_xscale,image_yscale,image_angle,image_blend,image_alpha + random(0.4));
 }}{interf_puffs}
 draw_set_blend_mode(bm_normal);
+}}
+if (global.{g}_interf = 1) {{
 with (ShipSection) {{
 draw_sprite_ext(sprite_index,image_index,xprevious - 4 + random(8),yprevious - 4 + random(8),image_xscale * (1 + random(0.22)),image_yscale * (1 + random(0.22)),image_angle,l_colour,image_alpha / 2);
+}}
 }}
 """
 
@@ -1486,8 +2289,10 @@ if (!variable_global_exists('ed_beat')) {{ global.ed_beat = -1; global.ed_beatse
 // created, and that instance never ran a Create that knew about this flag.
 // Reading a global that does not exist aborts the action it is read in.
 if (!variable_global_exists('{g}_interf')) global.{g}_interf = 0;
+if (!variable_global_exists('{g}_interfc')) global.{g}_interfc = 0;
 
 {self.storm_field() if storm.any() else ""}
+{self.bounds_hook()}
 
 // ------------------------------------------------------------- define once
 // GM7 has no room_delete, so a room_add per reload would leak one every time.
@@ -1520,6 +2325,9 @@ room_set_height(global.act2_room{slot}, {r['height']});
 room_set_caption(global.act2_room{slot}, "{r.get('caption', m['title'])}");
 room_set_background_color(global.act2_room{slot}, c_black, 1);
 """
+        # Last, on the finished text: the emitter builds it from a dozen places
+        # and only the whole file is what the game will actually compile.
+        self.check_calls(out)
         return out, numbered
 
     # (the act2.gml breadcrumb runs after execute_file of this mod returns, so
@@ -1573,8 +2381,13 @@ def beat_html(n, b):
         # onoff(), because YAML 1.1 parses a bare `on` as True and the viewer
         # should print the word the mission file uses.
         if key in b:
+            v = b[key]
+            # The block form of `interference:` is a dict, and `{'ships': False}`
+            # is not what a reader of the transcript wants to see.
+            if isinstance(v, dict):
+                v = ", ".join(f"{k} {Emitter.onoff(v[k])}" for k in v)
             rows.append(f'<p class="note"><span class="tag">{key}: '
-                        f'{esc(Emitter.onoff(b[key]))}</span></p>')
+                        f'{esc(v)}</span></p>')
     if b.get("autosave"):
         rows.append('<p class="note"><span class="tag save">autosave</span></p>')
     if "camera" in b:
