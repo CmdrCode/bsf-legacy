@@ -51,8 +51,10 @@ length changes and an address that was right once is a trap afterwards:
     if load_bar_mode != 0:  2 slots (back bar, front bar), each either
                             [i32 -1]  or  [i32 1][u32 len][len bytes zlib -> BMP]
     [i32 show_custom_load_image][u32 complen][complen bytes zlib -> BMP]
-        (the length+image pair exists only while the show flag is positive --
-        write 0 and keep the pair, and the stream desyncs)
+        (that is the same slot shape again: the show flag sits where a bar
+        slot's marker sits and does both jobs, so the length+image pair exists
+        only while it is positive -- write 0 and keep the pair, and the stream
+        desyncs)
     [i32 image_partially_transparent][i32 load_image_alpha][i32 scale_progress_bar]
     [i32 display_errors][i32 write_to_log][i32 abort_on_error][i32 uninit_as_zero]
 
@@ -500,11 +502,14 @@ def load_font(face: str, size: int) -> ImageFont.FreeTypeFont:
 _HEADER = struct.pack('<II', 1234321, 700)      #: GM's magic, then its version
 
 #: Offset of `load_bar_mode` from the header, established by reading this build
-#: and cross-checked against enigma-dev's GMK `LoadSettings` reader. The compiled
-#: exe omits the `!= -1` image-present marker the .gmk format carries in front of
-#: the *load image*, which is what makes the int right before the length the
-#: *show* flag rather than a second mode. Everything past here is walked, not
-#: remembered, because a non-zero bar mode inserts two ints.
+#: and cross-checked against enigma-dev's GMK `LoadSettings` reader. An earlier
+#: reading of this comment said the compiled exe *omits* the `!= -1` image-present
+#: marker that the .gmk format carries in front of the load image. It does not:
+#: `show_custom_load_image` sits in the marker's position and does both jobs at
+#: once (see `_slot`). Measured -- write 0 and keep the length+blob and the
+#: stream desyncs; write 0 and drop them and the exe boots with no splash.
+#: Everything past here is walked, not remembered, because a non-zero bar mode
+#: inserts two more slots.
 _BAR = 0x68
 _BAR_SLOTS = 2                  #: image slots a non-zero mode inserts, always two
 _TAIL_FIELDS = ('image_partially_transparent', 'load_image_alpha',
