@@ -21,9 +21,12 @@ This module draws that BMP and writes it back.
 --------------------------------------------------------------- the design
 "Drydock": an opaque HUD plate with its four corners chamfered off, the wordmark
 stacked at the left over a faint drydock grid, and an Athena-class cruiser
-holding station at the right. A recessed channel crosses the plate exactly
-where the runner draws its progress bar, and the version line anchors the foot
-below it.
+holding station at the right. The version line sits under the wordmark, and
+beneath it a recessed channel crosses the plate exactly where the runner draws
+its progress bar. The plate stands 18 rows taller than the stock banner for
+that one reason: the runner anchors its bar 32 rows above the window's foot,
+so the window grew until that band cleared the type and landed where the
+mockup always had it.
 
 Only the four corner triangles are keyed away -- about 1% of the frame. That is
 deliberate. Transparency here is a colour key, not an alpha channel: the runner
@@ -74,11 +77,13 @@ further down the file and is never rewritten here.
     there is no loading window at all, only the busy cursor. The default bar
     is dead code here; own images are not.
   * With `scale_progress_bar = 0` both images draw at native size, top-left
-    anchored in a fixed rect -- x 24..525, y 118..133 of the 550x150 window,
-    i.e. (24, H-32), (W-48) x 16 -- and are cropped to it. The front image is
-    further cropped to `progress x its own width`, so a rect-sized front fills
-    the recess exactly at 100%. LWA_COLORKEY keys the chamfers away with the
-    bar drawing happily inside them.
+    anchored in a fixed rect -- (24, H-32), sized (W-48) x 16, measured at
+    both H=150 (y 118..133) and H=168 (y 136..151), so the anchor tracks the
+    window height -- and are cropped to it. The front image is further cropped
+    to `progress x its own width`, so a rect-sized front fills the recess
+    exactly at 100%. The runner sizes and centres the window to whatever image
+    it is given, which is what lets the plate grow to move the bar. LWA_COLORKEY
+    keys the chamfers away with the bar drawing happily inside them.
 
 So the shipping configuration is mode 2 with both images supplied, drawn at
 patch time from the plate's own palette -- no fonts touched, so the
@@ -136,7 +141,9 @@ from PIL import Image, ImageChops, ImageDraw, ImageFont   # noqa: E402
 # the banner
 # --------------------------------------------------------------------------
 
-W, H = 550, 150                 #: what the runner has always shown, unchanged
+W, H = 550, 168                 #: stock width; 18 rows taller than the stock
+                                #: banner so the runner's bar band (anchored at
+                                #: H-32) clears the version line
 CHAMFER = 14                    #: corner cut, in pixels along each edge
 
 KEY     = (0xFF, 0x00, 0xE6)    #: transparency key -- absent from the artwork
@@ -171,16 +178,15 @@ WORDMARK = [
 #: which on Windows is not the one this was drawn against.
 STAMP_TEXT = 'V0.90D · MOD FRAMEWORK'
 STAMP_LINE = {                          # face -> (size, x, top, tracking-in-em)
-    'tt2':  (12, 24, 136, 0.34),
-    'mono': (12, 24, 136, 0.16),
+    'tt2':  (12, 24, 112, 0.34),
+    'mono': (12, 24, 112, 0.16),
 }
 
 RULE_BOX    = (24, 106)                 #: x, y -- the rule under the wordmark. Its
                                         #: width is measured from the line below it
                                         #: rather than fixed, so the two stay flush
                                         #: whichever face draws the line.
-DIVIDER_BOX = (284, 12, 106)            #: x, y, height -- wordmark | hull,
-                                        #: ending flush with the recess top
+DIVIDER_BOX = (284, 12, 114)            #: x, y, height -- wordmark | hull
 HULL        = ('Athena', 308, 18)      #: hull, and where it holds station
 
 
