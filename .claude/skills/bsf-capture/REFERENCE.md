@@ -196,7 +196,8 @@ runner's own boot phase — splash, load bar, "does this exe boot at all" — no
 and no real display are needed.
 
 * `Xvfb :99 -screen 0 3840x2160x24`, sized to the prefix's `Default` virtual
-  desktop so the desktop maps 1:1. The 550x150 splash centres on it, so an
+  desktop so the desktop maps 1:1. The splash (550 wide, and 168 tall since
+  the bar landed) centres on it, so an
   `ffmpeg -f x11grab -video_size 1280x720 -i :99.0+1280,720` region grab
   catches it with room to spare at a tenth of the pixels.
 * Launch directly with the usual `game.py` env plus `DISPLAY=:99`, cwd = the
