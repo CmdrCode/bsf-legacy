@@ -27,14 +27,18 @@ leaves parts floating in space where the hull used to be.
 """
 from __future__ import annotations
 
+import functools
 import pathlib
 import re
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 import paths    # noqa: E402
 import edits     # noqa: E402
+import gm7       # noqa: E402
+import gmobj     # noqa: E402
 import model     # noqa: E402
 import sprites   # noqa: E402
 
@@ -57,6 +61,64 @@ DAMAGE_TINT = gm_rgb(214, 84, 52)
 #: shape rather than their own -- visible only if you know to look for it.
 CORE_SPRITE = 'Stock Misc\\spr_Core.gif'
 
+@functools.lru_cache(maxsize=1)
+def _hulls_in_exe() -> dict[str, str]:
+    """Every stock hull's Create event, read straight out of the install.
+
+    `paths.GML` is a dump scraped from a *running* game (`tools/dump_game.py`
+    reads /proc/<pid>/mem under wine), so it exists on the machine that made it
+    and nowhere else. Anyone patching their own copy has the game and this
+    toolchain, nothing more -- and that is enough, because the definitions were
+    in the exe all along: each hull is a Game Maker object whose Create event
+    builds the sections, and the resource tree is plaintext once `gm7.py` undoes
+    gmkrypt. Same trick `exeart.py` uses to recover the sprites.
+
+    Costs one inflate + decrypt of a ~7 MB tree, so it is cached for the process.
+    """
+    exe = paths.require(paths.GAME / 'BattleshipsForever.exe', 'the game exe')
+    _raw, (_pos, _clen, blob) = gm7.load(str(exe))
+    plain, *_rest = gm7.gmkrypt_decrypt(blob)
+    out: dict[str, str] = {}
+    for pos in gmobj.candidates(plain):
+        try:
+            rec = gmobj.parse_object(plain, pos)
+        except Exception:
+            continue
+        if not rec or rec[0]['name'] in out:
+            continue
+        obj = rec[0]
+        for chunks in obj['events'].values():
+            src = '\n'.join(chunks)
+            if 'l_section[' in src:
+                out[obj['name']] = src
+                break
+    return out
+
+
+def source(name: str) -> str:
+    """A stock hull's Game Maker source: the dump if there is one, else the exe.
+
+    The dump wins when present only because it is already on disk; the two carry
+    the same text, and the exe is the one that travels.
+    """
+    f = (next(GML.glob(f'{name}.player.gml'), None)
+         or next(GML.glob(f'{name}.*.gml'), None))
+    if f is not None:
+        text, _ = model.decode(f.read_bytes())
+        return text
+    src = _hulls_in_exe().get(name)
+    if src is None:
+        raise FileNotFoundError(
+            f'no source for ship {name!r}: not under {GML}, and not among the '
+            f'{len(_hulls_in_exe())} hulls in {paths.GAME.name}')
+    return src
+
+
+def ship(name: str) -> model.Ship:
+    """A stock hull as a `Ship`, ready for `scene.build()`."""
+    return model.Ship(pathlib.Path(f'{name}.gml'), source(name), False)
+
+
 def read(name: str) -> dict:
     """Parse a stock ship's Game Maker source into sections and weapons.
 
@@ -64,11 +126,7 @@ def read(name: str) -> dict:
     like any other, the model reads `.shp` files written in it, and two copies
     of a regex that has to know `l_child` runs backwards is one too many.
     """
-    f = next(GML.glob(f'{name}.player.gml'), None) or next(GML.glob(f'{name}.*.gml'), None)
-    if f is None:
-        raise FileNotFoundError(f'no source for ship {name!r} under {GML}')
-    text, _ = model.decode(f.read_bytes())
-    return model.parse_gml(text)
+    return model.parse_gml(source(name))
 
 
 def _weapon_template() -> dict[str, list[str]]:
