@@ -1,10 +1,11 @@
 #!/bin/sh
-# Build bsfnat.dll -- the native half of the cursor cache.
+# Build the two native extensions: bsfnat.dll (cursor cache) and
+# bsfshader.dll (the pixel-shader API behind mods/shader.gml).
 #
-#   build.sh                 build bsfnat.dll
+#   build.sh                 build both DLLs
 #   build.sh abi             also build bsfnatat.dll and diff the export names
-#   build.sh install         build, then copy into $BSF_DIR
-#   build.sh uninstall       remove it from $BSF_DIR
+#   build.sh install         build, then copy into the game directory
+#   build.sh uninstall       remove them from it
 #
 # `abi` is the ABI probe: GM7's external_define takes a symbol NAME, and whether
 # it needs "s_nop2" or "s_nop2@16" depends on whether the DLL was linked with
@@ -36,7 +37,32 @@ if ! command -v "$CC" >/dev/null 2>&1 && [ ! -x "$CC" ]; then
 fi
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
-GAME="${BSF_DIR:-$HERE/../battleshipsforeverv090d}"
+
+# Where the game is. Resolved by tools/bsf/paths.py, which is the single answer
+# to that question in this repo -- this script used to carry a second one, and
+# two answers is how a DLL lands in one install while every other tool reads
+# another. BSF_DIR still wins, for pointing a step at a specific copy.
+#
+# Called only by the install/uninstall steps: a plain build needs no game
+# directory, and should not need python3 either.
+game_dir() {
+    if [ -n "${BSF_DIR:-}" ]; then
+        printf '%s\n' "$BSF_DIR"
+        return
+    fi
+    python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); import paths; print(paths.GAME)' \
+            "$HERE/bsf" 2>/dev/null
+}
+
+# Guard every use: an empty GAME would make `rm -f "$GAME/bsfnat.dll"` delete
+# /bsfnat.dll, and `cp` write to the filesystem root.
+require_game() {
+    GAME="$(game_dir)"
+    if [ -z "$GAME" ] || [ ! -d "$GAME" ]; then
+        echo "no game directory at '${GAME:-<not found>}' -- set BSF_DIR, or \$BSF_GAME" >&2
+        exit 1
+    fi
+}
 
 CFLAGS="-O2 -s -Wall -Wextra -shared -static-libgcc"   # -s: mingw GCC 13 emits ~230 KB of DWARF without it
 
@@ -44,6 +70,12 @@ CFLAGS="-O2 -s -Wall -Wextra -shared -static-libgcc"   # -s: mingw GCC 13 emits 
 # names them by.
 "$CC" $CFLAGS -o "$HERE/bsfnat.dll" "$HERE/bsfnat.c" -Wl,--kill-at
 echo "built $HERE/bsfnat.dll"
+
+# bsfshader is two translation units on purpose: d3d8.h and d3d9.h both define
+# D3D_SDK_VERSION and cannot be included together, so the D3D9 half is its own
+# file and the boundary between them is plain `void *`.
+"$CC" $CFLAGS -o "$HERE/bsfshader.dll" "$HERE/bsfshader.c" "$HERE/bsfshader_d9.c" -Wl,--kill-at
+echo "built $HERE/bsfshader.dll"
 
 if [ "${1:-}" = "abi" ]; then
     "$CC" $CFLAGS -o "$HERE/bsfnatat.dll" "$HERE/bsfnat.c"
@@ -61,12 +93,13 @@ fi
 
 case "${1:-}" in
 install)
-    [ -d "$GAME" ] || { echo "no game directory at $GAME -- set BSF_DIR" >&2; exit 1; }
-    cp "$HERE/bsfnat.dll" "$GAME/"
+    require_game
+    cp "$HERE/bsfnat.dll" "$HERE/bsfshader.dll" "$GAME/"
     echo "installed into $GAME"
     ;;
 uninstall)
-    rm -f "$GAME/bsfnat.dll" "$GAME/bsfnatat.dll"
+    require_game
+    rm -f "$GAME/bsfnat.dll" "$GAME/bsfnatat.dll" "$GAME/bsfshader.dll"
     echo "removed from $GAME"
     ;;
 esac

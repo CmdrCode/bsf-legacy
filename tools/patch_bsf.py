@@ -69,6 +69,7 @@ import cursorfix
 import dplay
 import gm7
 import hwvp
+import wineenv
 
 # ---------------------------------------------------------------------- the game
 # A dead comment inside GUI_MainTitle's startup event — code that provably runs
@@ -319,7 +320,7 @@ fi
 
 WINEPREFIX="${XDG_DATA_HOME:-$HOME/.local/share}/bsf-legacy/prefix"
 export WINEPREFIX
-export WINEDLLOVERRIDES="mscoree,mshtml="    # skip the Mono/Gecko download prompts
+export WINEDLLOVERRIDES="@OVERRIDES@"    # Mono/Gecko off; d3d8to9 preferred if present
 export WINEDEBUG=-all
 
 if [ ! -d "$WINEPREFIX" ]; then
@@ -376,7 +377,8 @@ def launcher_step(exe, remove=False):
             print(f'launcher: removed {os.path.basename(path)}')
         return
     with open(path, 'w', newline='\n') as f:
-        f.write(LAUNCHER.replace('@EXE@', base).replace('@STEM@', stem))
+        f.write(LAUNCHER.replace('@EXE@', base).replace('@STEM@', stem)
+                        .replace('@OVERRIDES@', wineenv.OVERRIDES))
     os.chmod(path, 0o755)
     print(f'launcher: wrote {os.path.basename(path)} — run it to play under wine')
 

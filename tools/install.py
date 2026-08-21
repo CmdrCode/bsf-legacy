@@ -159,6 +159,32 @@ def install_dll(game_dir):
     return False
 
 
+SHADER_DLL = 'bsfshader.dll'
+
+
+def install_shader(game_dir):
+    """Install the shader extension if its DLL was bundled, else turn it off.
+
+    Same shape as `install_dll` and for the same reason: the DLL is built by a
+    cross-compiler and is not checked in, so a source clone has it and the
+    Windows installer build may not.
+
+    Turning it off when absent is not strictly needed -- `mods/shader.gml` is a
+    file of `external_define`s and nothing else, so a missing DLL aborts that
+    file and leaves the game running normally. The marker just makes the state
+    legible rather than silent.
+    """
+    for root in (resource_root(), HERE, os.path.dirname(HERE)):
+        p = os.path.join(root, SHADER_DLL)
+        if os.path.exists(p):
+            shutil.copy2(p, os.path.join(game_dir, SHADER_DLL))
+            print('  installed %s (shader effects available)' % SHADER_DLL)
+            return True
+    print('  %s not bundled -- shader effects skipped.' % SHADER_DLL)
+    open(os.path.join(game_dir, 'mods', 'shader.off'), 'w').close()
+    return False
+
+
 def main():
     argv = [a for a in sys.argv[1:] if not a.startswith('-')]
     flags = {a for a in sys.argv[1:] if a.startswith('-')}
@@ -195,6 +221,7 @@ def main():
     print('\ninstalling modules...')
     install_mods(game_dir)
     install_dll(game_dir)
+    install_shader(game_dir)
 
     print('\npatching executable...')
     patch_bsf.mod_loader(exe)

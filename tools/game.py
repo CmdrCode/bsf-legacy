@@ -11,28 +11,46 @@ a shell command makes the caller kill itself (exit 144).
 """
 import glob
 import os
+import pathlib
 import signal
 import subprocess
 import sys
 import time
 
-BASE = os.path.dirname(os.path.abspath(__file__))
-GAME_DIR = os.path.join(BASE, 'battleshipsforeverv090d')
-PREFIX = os.path.join(BASE, 'wineprefix')
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent / 'bsf'))
+import paths      # noqa: E402
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import wineenv    # noqa: E402
+
+# Install discovery is `paths.py`'s job and nobody else's. This file used to
+# resolve the install against its own location, which is a second answer to a
+# question that already had one -- and two answers means one tool can act on an
+# install another tool never saw. The wine prefix sits beside the install, the
+# same relationship `paths.py` already uses for the GML dump.
+GAME_DIR = str(paths.GAME)
+PREFIX = str(paths.GAME.parent / 'wineprefix')
 EXE = 'Battleships' + 'Forever.exe'
 LOG = '/tmp/bsf_run.log'
 
 
 def env(winedebug='-all'):
-    # WINEDLLOVERRIDES_EXTRA lets a caller add overrides without editing this
-    # file -- e.g. `d3d8=n,b` to prefer the d3d8to9 shim sitting next to the exe
-    # over wine's builtin d3d8.
-    overrides = 'mscoree,mshtml='
-    extra = os.environ.get('WINEDLLOVERRIDES_EXTRA', '').strip()
-    if extra:
-        overrides += ';' + extra
+    # The overrides live in wineenv because four launch paths need the same
+    # string. WINEDLLOVERRIDES_EXTRA still appends, and appending wins in wine,
+    # so a caller can still turn one back off.
+    overrides = wineenv.overrides()
+    # DISPLAY is INHERITED, never pinned. It used to be hardcoded to ':0', which
+    # is wrong on any session whose X display is something else -- and the way it
+    # fails hides the cause completely: wine reports
+    #   err:winediag:nodrv_CreateWindow Application tried to create a window,
+    #                                   but no driver could be loaded
+    #   err:d3d:wined3d_caps_gl_ctx_create Failed to create a window
+    # and then Direct3DCreate8/Direct3DCreate9 return NULL, so every caps query
+    # comes back empty. That reads as a broken graphics stack; it is a wrong
+    # display. ':0' survives only as the fallback for a caller that has none.
+    display = os.environ.get('DISPLAY') or ':0'
     return dict(os.environ, WINEPREFIX=PREFIX, WINEARCH='win32',
-                WINEDLLOVERRIDES=overrides, WINEDEBUG=winedebug, DISPLAY=':0')
+                WINEDLLOVERRIDES=overrides, WINEDEBUG=winedebug, DISPLAY=display)
 
 
 def game_procs():
@@ -112,6 +130,7 @@ def launch(winedebug='-all', desktop=None):
     `wine explorer /desktop=`, which windows it too but makes the game stall at
     ~78 MB RSS and never finish loading — kept only for comparison.
     """
+    paths.require(pathlib.Path(GAME_DIR) / EXE, 'the game exe')
     log = open(LOG, 'wb')
     cmd = ['wine', 'explorer', f'/desktop=bsf,{desktop}', EXE] if desktop else ['wine', EXE]
     subprocess.Popen(cmd, cwd=GAME_DIR, env=env(winedebug),

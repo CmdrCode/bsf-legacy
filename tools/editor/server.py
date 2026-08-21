@@ -418,11 +418,9 @@ class Wine:
         return self.game is not None and os.path.isdir(INSTALL)
 
     def env(self):
-        overrides = 'mscoree,mshtml='                # skip the Mono/Gecko prompts
-        extra = os.environ.get('WINEDLLOVERRIDES_EXTRA', '').strip()
-        if extra:
-            overrides += ';' + extra
-        return dict(os.environ, WINEPREFIX=self.prefix, WINEDLLOVERRIDES=overrides,
+        import wineenv                # same string as every other launch path
+        return dict(os.environ, WINEPREFIX=self.prefix,
+                    WINEDLLOVERRIDES=wineenv.overrides(),
                     WINEDEBUG='-all', DISPLAY=os.environ.get('DISPLAY', ':0'))
 
     def desktop(self):
