@@ -33,6 +33,15 @@ is a local archive, never something to open.
    wmctrl reports 2×-scaled coordinates. Derive the offset for your own layout;
    on the reference desktop the 4K output sits at `+1080,0`.
 5. Never stage a capture in the canonical game dir — work on a scratch copy.
+6. Launch the exe **directly** (`wine BattleshipsForever.exe`, cwd = the game
+   dir). Routing through `wine explorer /desktop=…` breaks the load: no game
+   window ever appears, `wine` still exits 0, and the take records an empty
+   desktop for its whole length — so nothing reports the failure. Windowing
+   already comes from the prefix's registry virtual desktop, so the flag buys
+   nothing. `tools/game.py`'s `launch()` reaches the same conclusion from a
+   *different* symptom (a stall at ~78 MB RSS that never finishes loading),
+   which is reason to distrust any single causal story here and simply stay on
+   the plain path.
 
 ## Workflow
 

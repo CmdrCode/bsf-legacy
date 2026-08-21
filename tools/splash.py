@@ -21,8 +21,12 @@ This module draws that BMP and writes it back.
 --------------------------------------------------------------- the design
 "Drydock": an opaque HUD plate with its four corners chamfered off, the wordmark
 stacked at the left over a faint drydock grid, and an Athena-class cruiser
-holding station at the right. A recessed channel runs along the foot for the
-progress bar.
+holding station at the right. The version line sits under the wordmark, and
+beneath it a recessed channel crosses the plate exactly where the runner draws
+its progress bar. The plate stands 18 rows taller than the stock banner for
+that one reason: the runner anchors its bar 32 rows above the window's foot,
+so the window grew until that band cleared the type and landed where the
+mockup always had it.
 
 Only the four corner triangles are keyed away -- about 1% of the frame. That is
 deliberate. Transparency here is a colour key, not an alpha channel: the runner
@@ -44,8 +48,13 @@ address, because the fields after the image move whenever the image's compressed
 length changes and an address that was right once is a trap afterwards:
 
     [u32 1234321][u32 700] ... [i32 load_bar_mode]
-    if load_bar_mode != 0:  [i32 back_bar][i32 front_bar]
+    if load_bar_mode != 0:  2 slots (back bar, front bar), each either
+                            [i32 -1]  or  [i32 1][u32 len][len bytes zlib -> BMP]
     [i32 show_custom_load_image][u32 complen][complen bytes zlib -> BMP]
+        (that is the same slot shape again: the show flag sits where a bar
+        slot's marker sits and does both jobs, so the length+image pair exists
+        only while it is positive -- write 0 and keep the pair, and the stream
+        desyncs)
     [i32 image_partially_transparent][i32 load_image_alpha][i32 scale_progress_bar]
     [i32 display_errors][i32 write_to_log][i32 abort_on_error][i32 uninit_as_zero]
 
@@ -54,32 +63,43 @@ has already been through `patch_bsf.py` stays patched: the resource tree lives
 further down the file and is never rewritten here.
 
 --------------------------------------------------------------- the load bar
-**The two ints after a non-zero `load_bar_mode` are not optional, and there is
-no bar at the end of it anyway.** Both halves of that were measured against this
-build on 2026-08-20, by launching the patched exe and watching the frames:
+**Mode 2 is the working mode, and the wire format was the whole problem.** The
+2026-08-20 measurements stopped one int short of the answer; re-measured on
+2026-08-21 against this build, frames read off an Xvfb display:
 
-  * Write `load_bar_mode = 1` on its own and the gamedata stream desyncs from
-    that point on. The loader dies before any window appears -- silently, since
-    this is a loader failure and not a GML one, so `display_errors` has nothing
-    to say about it. Mode 2 with the two bar images written as bare
-    `[len][zlib]` pairs, with or without a present-marker in front, gets as far
-    as "Failed to load the game data. File seems corrupted."
-  * Write `1, -1, -1` and the game loads perfectly -- so the reader consumes
-    exactly two ints for any non-zero mode, and `-1` (absent) satisfies it.
-  * But no bar is ever drawn. Seven seconds of splash at 20 fps, and the only
-    lit pixels on screen are the 550x150 loading image: this runner draws no
-    progress bar over a *custom* loading image.
+  * A non-zero `load_bar_mode` is followed by two image *slots*, back bar then
+    front bar. An absent slot is the single int `-1`; a present one is
+    `[i32 1][u32 len][len bytes of zlib -> 24 bpp BMP file]`. The earlier
+    attempts sat either side of that: a bare `[len][zlib]` pair feeds the
+    length in as the marker and the zlib magic in as a length (desync), and
+    `1, -1, -1` parses cleanly while promising no images.
+  * Mode 1 -- GM's own red-on-grey bar -- draws nothing on this runner. Not
+    over a custom loading image, keyed or opaque, and not without one either:
+    set `show_custom_load_image = 0` (dropping the image pair with it) and
+    there is no loading window at all, only the busy cursor. The default bar
+    is dead code here; own images are not.
+  * With `scale_progress_bar = 0` both images draw at native size, top-left
+    anchored in a fixed rect -- (24, H-32), sized (W-48) x 16, measured at
+    both H=150 (y 118..133) and H=168 (y 136..151), so the anchor tracks the
+    window height -- and are cropped to it. The front image is further cropped
+    to `progress x its own width`, so a rect-sized front fills the recess
+    exactly at 100%. The runner sizes and centres the window to whatever image
+    it is given, which is what lets the plate grow to move the bar. LWA_COLORKEY
+    keys the chamfers away with the bar drawing happily inside them.
 
-So the shipping configuration leaves the mode at 0, which is what the game has
-always had, and the recessed channel along the foot of the plate is a design
-element rather than a promise. `--bar 1` still works and writes the markers, in
-case a later build behaves differently.
+So the shipping configuration is mode 2 with both images supplied, drawn at
+patch time from the plate's own palette -- no fonts touched, so the
+patch-needs-nothing rule holds. The plate's recessed channel sits exactly under
+the runner's rect and the back image repaints it pixel for pixel, which is what
+makes the handoff invisible. `--bar 0` restores the historical dormant
+configuration; `--bar 1` still writes the absent markers, in case a later
+runner grows a default bar.
 
 ------------------------------------------------------- what this needs to run
 The banner arrives in two halves, split along the only line that matters: what
 may be checked in, and what may not.
 
-  * **The plate** -- `splash-plate.png`, 550x150 and about 5 KB. Ground, grid,
+  * **The plate** -- `splash-plate.png`, 550x168 and about 5 KB. Ground, grid,
     chamfers, rules, channel and every line of type. None of it is the game's,
     so it is tracked, and it arrives as pixels: patching needs no fonts, which
     is what lets the version line be set in a mono nobody has to install.
@@ -123,7 +143,9 @@ from PIL import Image, ImageChops, ImageDraw, ImageFont   # noqa: E402
 # the banner
 # --------------------------------------------------------------------------
 
-W, H = 550, 150                 #: what the runner has always shown, unchanged
+W, H = 550, 168                 #: stock width; 18 rows taller than the stock
+                                #: banner so the runner's bar band (anchored at
+                                #: H-32) clears the version line
 CHAMFER = 14                    #: corner cut, in pixels along each edge
 
 KEY     = (0xFF, 0x00, 0xE6)    #: transparency key -- absent from the artwork
@@ -136,7 +158,12 @@ CYAN    = (0x40, 0xF0, 0xF0)    #: ...and the LEGACY! swash on the main menu
 STAMP   = (0x6B, 0x83, 0x79)    #: the version line, deliberately quiet
 
 GRID_INK, GRID_A, GRID_STEP = (111, 254, 39), 0.055, 25
-CHANNEL_H = 14
+
+#: The runner's bar rect, measured off this build (see "the load bar"): both
+#: bar images land top-left anchored at (BAR_X, BAR_TOP) and are cropped to
+#: BAR_W x BAR_H. The plate's recess sits exactly here so plate and bar agree.
+BAR_X, BAR_TOP = 24, H - 32
+BAR_W, BAR_H = W - 2 * BAR_X, 16
 
 #: (text, face, size, x, top, tracking-in-em, colour). `top` is the CSS box top
 #: the mockup was laid out against; `_baseline` converts it.
@@ -288,6 +315,31 @@ def _plate_mask() -> Image.Image:
     return mask
 
 
+def draw_bar(fill: tuple[int, int, int]) -> Image.Image:
+    """One bar image: a flat field under the hairline that caps the recess.
+
+    Back and front differ only in that fill -- CHANNEL for the empty recess,
+    GREEN for what has loaded -- so they are one function. Drawing them the
+    same way is what keeps the front from creeping a pixel off the back as
+    the design changes.
+    """
+    img = Image.new('RGB', (BAR_W, BAR_H), fill)
+    ImageDraw.Draw(img).rectangle([0, 0, BAR_W - 1, 0], fill=RULE)
+    return img
+
+
+def _paint_recess(img: Image.Image) -> None:
+    """Stamp the empty recess onto the plate, at the runner's own bar rect.
+
+    The same pixels the runner will lay down as the back bar -- literally the
+    same image, so the handoff is invisible by construction rather than by two
+    code paths agreeing. `banner` re-asserts it after the hull lands, because
+    the runner draws the bar over the hull too and the preview should not
+    disagree.
+    """
+    img.paste(draw_bar(CHANNEL), (BAR_X, BAR_TOP))
+
+
 def draw_plate(stamp_face: str = 'mono') -> Image.Image:
     """Everything except the hull -- and everything that needs a font.
 
@@ -297,6 +349,12 @@ def draw_plate(stamp_face: str = 'mono') -> Image.Image:
     is what frees the version line to be set in a mono nobody has to install.
     """
     size, sx, stop, strack = STAMP_LINE[stamp_face]
+    if stop + size > BAR_TOP:
+        raise SystemExit(
+            f'the {stamp_face} version line runs to y={stop + size} but the '
+            f'runner puts its bar band at y={BAR_TOP}. H is 18 rows taller '
+            f'than the stock banner for exactly this clearance -- raise H '
+            f'(the band follows it at H-32) or lift STAMP_LINE.')
     lines = WORDMARK + [(STAMP_TEXT, stamp_face, size, sx, stop, strack, STAMP)]
     rule_w = _tracked_width(load_font(stamp_face, size), STAMP_TEXT, strack * size)
     layer = Image.new('RGB', (W, H), PLATE)
@@ -308,14 +366,13 @@ def draw_plate(stamp_face: str = 'mono') -> Image.Image:
     x, y, h = DIVIDER_BOX
     d.rectangle([x, y, x, y + h - 1], fill=RULE)
 
-    d.rectangle([0, H - CHANNEL_H, W - 1, H - 1], fill=CHANNEL)
-    d.rectangle([0, H - CHANNEL_H, W - 1, H - CHANNEL_H], fill=RULE)
-
     for text, face, size, tx, top, track, ink in lines:
         font = load_font(face, size)
         _tracked(d, (tx, _baseline(font, top, size)), text, font, ink,
                  track * size)
 
+    _paint_recess(layer)        # last, as `banner` does it -- the band is the
+                                # runner's, and nothing may sit in it
     out = Image.new('RGB', (W, H), KEY)
     out.paste(layer, (0, 0), _plate_mask())
     return out
@@ -340,6 +397,7 @@ def banner(stamp_face: str = 'mono', *, from_fonts: bool = False) -> Image.Image
     hull = _hull()
     _name, hx, hy = HULL
     out.paste(hull, (hx, hy), _ink(hull))
+    _paint_recess(out)
     _check_key(out, _plate_mask())
     return out
 
@@ -444,16 +502,45 @@ def load_font(face: str, size: int) -> ImageFont.FreeTypeFont:
 _HEADER = struct.pack('<II', 1234321, 700)      #: GM's magic, then its version
 
 #: Offset of `load_bar_mode` from the header, established by reading this build
-#: and cross-checked against enigma-dev's GMK `LoadSettings` reader. The compiled
-#: exe omits the `!= -1` image-present marker the .gmk format carries in front of
-#: the *load image*, which is what makes the int right before the length the
-#: *show* flag rather than a second mode. Everything past here is walked, not
-#: remembered, because a non-zero bar mode inserts two ints.
+#: and cross-checked against enigma-dev's GMK `LoadSettings` reader. An earlier
+#: reading of this comment said the compiled exe *omits* the `!= -1` image-present
+#: marker that the .gmk format carries in front of the load image. It does not:
+#: `show_custom_load_image` sits in the marker's position and does both jobs at
+#: once (see `_slot`). Measured -- write 0 and keep the length+blob and the
+#: stream desyncs; write 0 and drop them and the exe boots with no splash.
+#: Everything past here is walked, not remembered, because a non-zero bar mode
+#: inserts two more slots.
 _BAR = 0x68
-_BAR_MARKERS = 2                #: ints the reader eats when the mode is non-zero
+_BAR_SLOTS = 2                  #: image slots a non-zero mode inserts, always two
 _TAIL_FIELDS = ('image_partially_transparent', 'load_image_alpha',
                 'scale_progress_bar', 'display_errors', 'write_to_log',
                 'abort_on_error', 'treat_uninit_as_zero')
+
+
+def _slot(raw: bytes | None) -> bytes:
+    """One optional-blob slot: a marker, then the deflated payload if present.
+
+    The settings stream spells an optional image this way in three places --
+    the two bar slots, and the loading image, whose `show_custom_load_image`
+    int *is* its marker. `-1` is absent, and the reader consumes the marker
+    either way, which is why a slot can never simply be left out.
+    """
+    if raw is None:
+        return struct.pack('<i', -1)
+    z = zlib.compress(raw, 9)
+    return struct.pack('<iI', 1, len(z)) + z
+
+
+def _read_slot(buf: bytes, off: int) -> tuple[int, int]:
+    """Walk one slot. Returns its deflated length (-1 if absent) and the offset
+    just past it -- the payload is skipped rather than copied, so walking an
+    8 MB buffer costs nothing."""
+    marker = struct.unpack_from('<i', buf, off)[0]
+    off += 4
+    if marker == -1:
+        return -1, off
+    n = struct.unpack_from('<I', buf, off)[0]
+    return n, off + 4 + n
 
 
 class Settings:
@@ -472,8 +559,11 @@ class Settings:
         off = self.base + _BAR
         self._bar = struct.unpack_from('<i', buf, off)[0]
         off += 4
+        self.bar_slots = []     #: per slot: -1 (absent) or the zlib length
         if self._bar:
-            off += 4 * _BAR_MARKERS
+            for _ in range(_BAR_SLOTS):
+                n, off = _read_slot(buf, off)
+                self.bar_slots.append(n)
         self._show_at = off
         self.complen = struct.unpack_from('<I', buf, off + 4)[0]
         self.image_at = off + 8
@@ -496,9 +586,12 @@ class Settings:
         bmp = self.image()
         w, h = struct.unpack_from('<ii', bmp, 18)
         bpp = struct.unpack_from('<H', bmp, 28)[0]
+        slots = ', '.join('absent' if n < 0 else f'{n} B zlib'
+                          for n in self.bar_slots)
         rows = [f'settings block   0x{self.base:x}  (image at 0x{self.image_at:x}, '
                 f'tail at 0x{self.tail:x})',
-                f'load_bar_mode              {self.bar_mode()}',
+                f'load_bar_mode              {self.bar_mode()}'
+                + (f'  ({slots})' if slots else ''),
                 f'show_custom_load_image     {self.show_image()}',
                 f'loading image              {w}x{h} {bpp}bpp, '
                 f'{len(bmp)} B -> {self.complen} B deflated']
@@ -507,23 +600,32 @@ class Settings:
 
 
 def write_settings(buf: bytes, bmp: bytes, *, bar_mode: int, transparent: int,
-                   alpha: int) -> bytes:
+                   alpha: int, bar_back: bytes | None = None,
+                   bar_front: bytes | None = None) -> bytes:
     """Return `buf` with a new loading image and the three flags that show it.
 
     The image is replaced first and the flags are addressed afterwards, off the
-    *new* tail, because swapping the image moves them.
+    *new* tail, because swapping the image moves them. The two bar images are
+    named rather than passed as a sequence because the stream distinguishes
+    them only by position -- handing them over in the wrong order yields an exe
+    that boots happily and draws the recess over the fill.
     """
+    if (bar_back is None) != (bar_front is None):
+        raise SystemExit('supply both bar images or neither: a half-filled '
+                         'pair draws a fill with no ground under it')
+    if (bar_mode == 2) != (bar_back is not None):
+        raise SystemExit(f'load_bar_mode {bar_mode} with '
+                         f'{"images" if bar_back else "no images"}. 2 is the '
+                         f'mode that draws own bar images, and the only mode '
+                         f'with any use for them -- mode 2 without them is the '
+                         f'configuration that parses cleanly and draws nothing.')
     s = Settings(buf)
-    blob = zlib.compress(bmp, 9)
     head = bytearray(buf[:s.base + _BAR])
     head += struct.pack('<i', bar_mode)
     if bar_mode:
-        # The reader eats these whether or not it wants them. -1 is "absent",
-        # which is the only value that leaves the stream aligned without also
-        # supplying two bar images.
-        head += struct.pack('<i', -1) * _BAR_MARKERS
-    head += struct.pack('<i', 1)                          # show_custom_load_image
-    head += struct.pack('<I', len(blob)) + blob
+        for raw in (bar_back, bar_front):
+            head += _slot(raw)
+    head += _slot(bmp)          # this slot's marker is show_custom_load_image
     tail = bytearray(buf[s.tail:])
     struct.pack_into('<ii', tail, 0, transparent, alpha)
     return bytes(head + tail)
@@ -575,10 +677,11 @@ def main(argv=None) -> int:
     p.add_argument('exe', nargs='?')
     p.add_argument('--alpha', type=int, default=255,
                    help='load_image_alpha, 0-255, uniform over the whole window')
-    p.add_argument('--bar', type=int, default=0, choices=(0, 1),
-                   help='load_bar_mode. 0 is the shipping value: this runner '
-                        'draws no bar over a custom loading image, so 1 costs '
-                        'two stream ints and buys nothing (see the module docs)')
+    p.add_argument('--bar', type=int, default=2, choices=(0, 1, 2),
+                   help='load_bar_mode. 2 is the shipping value: own bar '
+                        'images drawn from the plate palette, filling the '
+                        'recess. 1 is dead code on this runner and 0 is the '
+                        'historical dormant value.')
     p.add_argument('--opaque', action='store_true',
                    help='leave image_partially_transparent off (square corners)')
     p.add_argument('--from-fonts', action='store_true',
@@ -640,13 +743,20 @@ def main(argv=None) -> int:
         raise SystemExit('show_custom_load_image is 0 in this exe; it would not '
                          'display a custom image however we write one')
 
-    if args.bar:
-        print('note: measured on this build -- no bar is drawn over a custom '
-              'loading image, whatever the mode says')
+    if args.bar == 1:
+        print('note: measured on this build -- mode 1 draws nothing, with or '
+              'without a custom loading image. 2 is the mode with a bar.')
 
     img = banner(args.stamp, from_fonts=args.from_fonts)
     bmp = _outdir() / 'drydock.bmp'
     img.save(bmp)
+
+    bars = {}
+    if args.bar == 2:
+        for role, fill in (('back', CHANNEL), ('front', GREEN)):
+            path = _outdir() / f'bar-{role}.bmp'
+            draw_bar(fill).save(path)
+            bars[f'bar_{role}'] = path.read_bytes()
 
     bak = exe.with_suffix(exe.suffix + BACKUP_SUFFIX)
     if not args.no_backup and not bak.exists():
@@ -655,7 +765,7 @@ def main(argv=None) -> int:
 
     patched = write_settings(buf, bmp.read_bytes(), bar_mode=args.bar,
                              transparent=0 if args.opaque else 1,
-                             alpha=args.alpha)
+                             alpha=args.alpha, **bars)
     exe.write_bytes(patched)
 
     after = Settings(exe.read_bytes())

@@ -188,3 +188,30 @@ it (e.g. `drive-capture.sh` next to `bsf-legacy-4k-menu-resolution.mp4`), so a
 take can be reproduced or restaged later. Captioned takes also archive their
 `marks.txt` and card PNGs (e.g. `smpick-demo-assets/`). `_local/` is
 git-ignored and hook-blocked — captures and scripts never publish.
+
+## Headless boot/splash capture under Xvfb — 2026-08-21
+
+Proven while measuring the loading bar (engine notes §26–27). For watching the
+runner's own boot phase — splash, load bar, "does this exe boot at all" — no WM
+and no real display are needed.
+
+* `Xvfb :99 -screen 0 3840x2160x24`, sized to the prefix's `Default` virtual
+  desktop so the desktop maps 1:1. The splash (550 wide, and 168 tall since
+  the bar landed) centres on it, so an
+  `ffmpeg -f x11grab -video_size 1280x720 -i :99.0+1280,720` region grab
+  catches it with room to spare at a tenth of the pixels.
+* Launch directly with the usual `game.py` env plus `DISPLAY=:99`, cwd = the
+  staged dir (hard rule 6 — `wine explorer /desktop=…` is how a whole run of
+  splash measurements came back void).
+* 10 fps PNG frames are plenty; the splash lives ~8 s. Verdict signatures: a
+  healthy boot shows the splash within ~1 s and the game window ~8 s later; a
+  desynced gamedata stream shows **no window at all for 45 s** and the loader
+  exits silently — `display_errors` never gets a say.
+* Tear down by PID, never by name: keep the Xvfb pid in a file, and free a
+  squatted display with `fuser -k /tmp/.X11-unix/X99`. A `pkill -f` whose
+  pattern appears anywhere in the calling command text (a heredoc that writes
+  the script counts) kills the caller — same trap `tools/game.py` documents
+  for the exe name, and it cost two diagnostic runs before it was recognised.
+* When cycling variant exes through one staged copy, make the runner **fail
+  loudly if the variant is missing** — a silent `cp` failure re-measures the
+  previous exe and hands back its results under the new name.
