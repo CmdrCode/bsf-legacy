@@ -33,6 +33,10 @@ is a local archive, never something to open.
    wmctrl reports 2×-scaled coordinates. Derive the offset for your own layout;
    on the reference desktop the 4K output sits at `+1080,0`.
 5. Never stage a capture in the canonical game dir — work on a scratch copy.
+6. Launch the exe **directly** (`wine BattleshipsForever.exe`, cwd = the game
+   dir). `wine explorer /desktop=…` hands it to a detached explorer that loses
+   the caller's cwd — the game dies before its first window, `wine` still
+   exits 0, and the take records an empty desktop.
 
 ## Workflow
 
