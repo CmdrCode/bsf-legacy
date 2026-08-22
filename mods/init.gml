@@ -171,8 +171,10 @@ nm[18]='shader';     mk[18]='!shader.off';  // pixel shaders over the game's own
                                             //   EFFECTS, not performance. Needs bsfshader.dll and
                                             //   d3d8to9; without either it reports off and no-ops
 nm[19]='shaderdemo'; mk[19]='shaderdemo.on';// MUST follow shader: uses its globals. Measurement
-nm[20]='roomtest';   mk[20]='';             // LAST: probes for functions that may not exist, and a
-last = 20;                                  // missing one silently aborts the rest of the file it is in
+nm[20]='shaderspr';  mk[20]='shaderspr.on';// MUST follow shader: per-sprite bracket test. Measurement
+nm[21]='cloak';      mk[21]='cloak.on';     // MUST follow shader: ship decloak effect. Demo
+nm[22]='roomtest';   mk[22]='';             // LAST: probes for functions that may not exist, and a
+last = 22;                                  // missing one silently aborts the rest of the file it is in
 
 for (k = 0; k <= last; k += 1) {
     if (mk[k] == '')
