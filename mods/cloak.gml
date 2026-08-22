@@ -282,6 +282,7 @@ body =
   '        ck_ft = 0; ck_eg = 0; ck_hp2 = 0; ck_live = 0;' +
   '        ck_ft0 = 0; ck_eg0 = 0; ck_hp0 = 0; ck_live0 = 0;' +
   '      }' +
+  '      l_cloak_has = 1;' +
 
 // ---- the part list. Every part of a ship carries l_owner pointing at it --
 //      initSections, initWeapons and initDoodad all set it -- so that is the
@@ -451,6 +452,14 @@ body =
   '  }' +
   '}';
 
+// Cleared here and set by the passes below, so it is true for exactly one
+// frame's worth of "this hull currently mounts a live cloak". Added BEFORE the
+// passes because actions run in the order they are added, and a clear that ran
+// after them would erase what they had just written. The HUD reads it.
+object_event_add(ctl, 3, 2,
+    'with (ctr_Ship)  { l_cloak_has = 0; }' +
+    'with (ctr_EShip) { l_cloak_has = 0; }');
+
 object_event_add(ctl, 3, 2, string_replace(body, 'OBJ', 'global.bsf_umbracloak'));
 object_event_add(ctl, 3, 2, string_replace(body, 'OBJ', 'global.bsf_eumbracloak'));
 
@@ -590,6 +599,55 @@ object_event_add(ctl, 3, 2,
     '        if (hid2 == 1) c_target = -4;' +
     '      }' +
     '    }' +
+    '  }' +
+    '}');
+
+// =========================================================================
+// 3b. THE CLOAK BAR IN THE SHIP PANEL
+// =========================================================================
+// GUI_HudText's User Event 0 draws the right-hand ship panel, and it ends with
+// d3d_transform_set_identity() followed by the hull healthbar at
+// (22, GUI_MinimapSize + 20), width GUI_MinimapSize - 25. An appended action
+// runs straight after that, in the same coordinate space and with the transform
+// already identity, so the cloak bar can simply be placed under the hull bar
+// using the same constants -- no need to know where on screen the panel sits,
+// which is what makes this survive the resolution and widescreen modules.
+//
+// This is ADDING to the HUD, which an append can do. It is not the same as the
+// chrome DIMMING the design asked for: that needs the stock bars to draw
+// differently, and an append cannot reach inside an event it runs after.
+//
+// GUI_HudText already has this event, so this is guide rule 1 -- appended after
+// the stock body, never shadowing it. The stock else-branch can call
+// instance_destroy(), hence the instance_exists guard.
+object_event_add(GUI_HudText, 7, 10,
+    'if (instance_exists(l_owner)) {' +
+    '  var shp, has, bud, hid;' +
+    '  shp = l_owner;' +
+    '  has = 0; bud = 0; hid = 0;' +
+    '  with (shp) {' +
+    '    if (variable_local_exists("l_cloak_has")) {' +
+    '      has = l_cloak_has;' +
+    '      if (variable_local_exists("ck_bud")) bud = ck_bud;' +
+    '      if (variable_local_exists("l_cloak_hidden")) hid = l_cloak_hidden;' +
+    '    }' +
+    '  }' +
+    '  if (has == 1) {' +
+    '    var bl, bx, by, cmax;' +
+    '    bl = GUI_MinimapSize - 25;' +
+    '    bx = 22;' +
+    '    by = GUI_MinimapSize + 20 + GUI_HealthBarHeight * 4 + 7;' +
+// Cyan while the cloak is actually up, dim blue while it is down, so the bar
+// says both "how much is left" and "is it on" without a second widget.
+    '    cmax = $703000;' +
+    '    if (hid == 1) cmax = $FFC800;' +
+    '    draw_set_alpha(1);' +
+    '    draw_set_color($FFFFFF);' +
+    '    draw_rectangle(bx - 2, by - 2, bx + bl + 2, by + GUI_HealthBarHeight * 2 + 2, 0);' +
+    '    draw_healthbar(bx, by, bx + bl, by + GUI_HealthBarHeight * 2, bud, $000000, $301000, cmax, 0, 1, 0);' +
+    '    draw_set_font(HUDFont);' +
+    '    draw_set_color($FFFFFF);' +
+    '    draw_text(bx, by + GUI_HealthBarHeight * 2 + 2, "CLOAK " + string(round(bud)));' +
     '  }' +
     '}');
 
