@@ -102,6 +102,13 @@ jobs:
       - name: Install PyInstaller
         run: pip install --require-hashes -r .github/requirements-windows.txt
 
+      # --add-data, not --add-binary, for bsfshader.dll and the vendored
+      # d3d8to9: --add-binary runs PyInstaller's dependency analysis over the
+      # file, and these are 32-bit DLLs being inspected by a 64-bit Python on a
+      # Windows runner. Nothing needs that analysis -- both are loaded by the
+      # game at run time, never imported by the installer -- and --add-data is a
+      # verbatim copy, which is all that is wanted.
+      #
       # --paths and --hidden-import are both needed: install.py imports patch_bsf
       # after mutating sys.path at run time, which PyInstaller's static analysis
       # cannot follow, so the modules must be named explicitly or the exe builds
@@ -111,7 +118,8 @@ jobs:
           pyinstaller --onefile --console
           --name BSF-Legacy-Installer
           --add-data "mods;mods"
-          --add-binary "bsfshader.dll;."
+          --add-data "vendor/d3d8to9;vendor/d3d8to9"
+          --add-data "bsfshader.dll;."
           --paths tools
           --hidden-import patch_bsf
           --hidden-import hwvp

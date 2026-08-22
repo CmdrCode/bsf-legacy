@@ -20,6 +20,12 @@
 *.gm6
 *.gb1
 *.dll
+# ...with one named exception. d3d8to9's released d3d8.dll is a third party's
+# BSD-2 artefact, not the game's and not ours -- mods/shader.gml cannot reach a
+# D3D9 device without it. The pattern names that one path, so every other DLL,
+# including our own tools/build.sh output, stays refused. See
+# vendor/d3d8to9/README.md for provenance and the licence obligation.
+!vendor/d3d8to9/d3d8.dll
 battleshipsforeverv090d*/
 bsf-*/
 wineprefix/

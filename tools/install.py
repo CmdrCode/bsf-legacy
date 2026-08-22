@@ -187,6 +187,66 @@ def install_shader(game_dir):
     return False
 
 
+#: d3d8to9, vendored under vendor/d3d8to9/. `mods/shader.gml` reaches a D3D9
+#: device through this and has no other way to: BSF is a D3D8 title, so until
+#: something translates there is no D3D9 device to hand a shader to.
+D3D8_DLL = 'd3d8.dll'
+D3D8_DIR = ('vendor', 'd3d8to9')
+D3D8_NOTICE = 'd3d8to9-LICENSE.txt'
+
+
+def d3d8_source():
+    """The vendored d3d8to9 directory, frozen or from a source clone.
+
+    One path for both cases: `resource_root()` is the PyInstaller unpack dir
+    when frozen and the repo root otherwise, and the workflow bundles the
+    directory under its own name, so the layout below it is the same either way.
+    """
+    d = os.path.join(resource_root(), *D3D8_DIR)
+    return d if os.path.exists(os.path.join(d, D3D8_DLL)) else None
+
+
+def install_d3d8(game_dir):
+    """Install d3d8to9 next to the game, with the notice its licence requires.
+
+    Placement IS the install: Windows resolves `d3d8.dll` from the game's own
+    directory ahead of the system one. Wine has to be told separately, which is
+    what the `d3d8=n,b` override in `tools/wineenv.py` does.
+
+    The licence text is copied in beside it, not just named. BSD 2-Clause asks
+    that a binary redistribution reproduce the copyright notice, conditions and
+    disclaimer in the materials provided with the distribution -- and the file
+    in the repository does not travel with a released installer, so it is
+    carried here instead. `--uninstall` removes both.
+    """
+    src = d3d8_source()
+    if src is None:
+        print('  %s not bundled -- shader effects will report off.' % D3D8_DLL)
+        return False
+    shutil.copy2(os.path.join(src, D3D8_DLL), os.path.join(game_dir, D3D8_DLL))
+    lic = os.path.join(src, 'LICENSE.md')
+    if os.path.exists(lic):
+        shutil.copy2(lic, os.path.join(game_dir, D3D8_NOTICE))
+    print('  installed %s -- d3d8to9 by Patrick Mours, BSD 2-Clause;' % D3D8_DLL)
+    print('    see %s beside the game. It translates the game\'s' % D3D8_NOTICE)
+    print('    D3D8 calls to D3D9, which is what lets shaders run.')
+    return True
+
+
+def remove_d3d8(game_dir):
+    """Take d3d8to9 and its notice back out.
+
+    Part of `--uninstall` because installing it changes how EVERY draw reaches
+    the driver, not only the shader ones. Leaving it behind would mean an
+    uninstall that quietly kept the translation layer.
+    """
+    for fn in (D3D8_DLL, D3D8_NOTICE):
+        p = os.path.join(game_dir, fn)
+        if os.path.exists(p):
+            os.remove(p)
+            print('  removed %s' % fn)
+
+
 def main():
     argv = [a for a in sys.argv[1:] if not a.startswith('-')]
     flags = {a for a in sys.argv[1:] if a.startswith('-')}
@@ -213,6 +273,7 @@ def main():
             patch_bsf.revert(sm)
             hwvp.revert(sm)
             dplay.revert(sm)
+        remove_d3d8(game_dir)
         print('done. mods/ left in place -- delete it to remove the modules.')
         return
 
@@ -224,6 +285,7 @@ def main():
     install_mods(game_dir)
     install_dll(game_dir)
     install_shader(game_dir)
+    install_d3d8(game_dir)
 
     print('\npatching executable...')
     patch_bsf.mod_loader(exe)
