@@ -17,6 +17,7 @@ Run it alongside the round-trip gate:
 """
 from __future__ import annotations
 
+import io
 import pathlib
 import sys
 import tempfile
@@ -592,6 +593,211 @@ def test_serve_index_and_routes():
     empty = serve.Index([pathlib.Path(td) / 'gone'])
     ok(empty.entries == [] and empty.default() is None,
        'a missing root is empty, not an exception')
+
+
+def test_sprites_hot_reload():
+    """Art added, edited or deleted reaches the page without a restart.
+
+    A ship's own bytes say nothing about the sprites it names, so before this
+    the preview drew whatever it happened to load first: a sprite dropped in
+    beside a hull that was waiting for it stayed `unresolved` until the ship
+    file itself was touched -- which is exactly the state you are in while
+    drawing the sprite. Three separate caches had to learn it: the loader's
+    LRU (keyed by path), the hull revision the page polls, and the browser's
+    image cache (keyed by `spr`).
+    """
+    import numpy as np
+    import sprites
+    from PIL import Image
+
+    def art(shade: int, w: int = 12) -> bytes:
+        a = np.zeros((16, w, 3), dtype=np.uint8)
+        a[4:12, 2:w - 2] = shade                     # bottom-left stays the key
+        buf = io.BytesIO()
+        Image.fromarray(a).save(buf, format='PNG')
+        return buf.getvalue()
+
+    with tempfile.TemporaryDirectory() as td:
+        root = pathlib.Path(td) / 'Custom sprites'
+        (root / 'Sections').mkdir(parents=True)
+        f = root / 'Sections' / 'probe.png'
+        old_root, old_exe = sprites.SPRITES, sprites.EXE_CACHE
+        sprites.SPRITES = root
+        sprites.EXE_CACHE = pathlib.Path(td) / 'no-exe-cache'
+        try:
+            empty = sprites.tree_rev(fresh=True)
+            ok(sprites.resolve('Sections\\probe.png') is None,
+               'a sprite that does not exist yet resolves to nothing')
+
+            f.write_bytes(art(200))
+            added = sprites.tree_rev(fresh=True)
+            ok(added != empty, 'a sprite appearing moves the tree revision')
+            ok(sprites.resolve('Sections\\probe.png') == f,
+               'and it resolves the moment it is there — no rescan to arrange')
+            first = sprites.load(str(f), mask=False)
+
+            # Same name, same path, different pixels: the case a path-keyed
+            # cache serves stale forever.
+            f.write_bytes(art(90, w=14))
+            edited = sprites.tree_rev(fresh=True)
+            ok(edited != added, 'a sprite edited in place moves it too')
+            second = sprites.load(str(f), mask=False)
+            ok(second.w != first.w or not np.array_equal(second.frames[0],
+                                                         first.frames[0]),
+               'and the loader returns the new pixels, not the cached ones')
+
+            f.unlink()
+            ok(sprites.tree_rev(fresh=True) != edited,
+               'a sprite deleted moves it as well')
+            ok(sprites.resolve('Sections\\probe.png') is None,
+               'and it goes back to unresolved rather than to stale art')
+        finally:
+            sprites.SPRITES, sprites.EXE_CACHE = old_root, old_exe
+            sprites.tree_rev(fresh=True)   # drop the temp tree's digest
+
+
+def test_scene_wire_carries_no_path():
+    """What `/scene.json` sends names no local directory.
+
+    `--bind auto` offers the page on the tailnet, so the payload travels. Two
+    fields were absolute filesystem paths: every op's `spr`, and the ship's own
+    `file`. `for_web` is the wire boundary, so both stop there -- `spr` becomes
+    a token for the pixels, which is also what lets the browser cache it.
+    """
+    import json
+
+    sc = scene.build(model.load(BOLTHOLE))
+    web = scene.for_web(sc)
+    blob = json.dumps(web)
+    for probe in (str(paths.GAME), str(paths.REPO), str(pathlib.Path.home())):
+        ok(probe not in blob, 'the wire scene names no local directory',
+           f'found {probe!r}')
+    ok('file' not in web, "the ship's own path does not go over the wire")
+    ok(all(len(o['spr']) == 16 and o['spr'].isalnum() for o in web['ops']),
+       'every op names its art by an opaque token')
+    ok(set(web['sprites']) == {o['spr'] for o in web['ops']},
+       'and the token is the key the pixels arrive under')
+    # build()'s ops keep the path: render and check read them and need one.
+    ok(all('/' in o['spr'] or '\\' in o['spr'] for o in sc['ops']),
+       'while build() still hands the renderers real paths')
+
+
+def test_page_pick_matches_the_blitter():
+    """The preview's hover pick names the part the blitter actually drew.
+
+    Both halves of the old test were the same mistake -- that a sprite *is* its
+    sheet. A section's sheet is 80x80 holding a plate that fills 4% of it
+    (BSF_Stock09) to 27% (BSF_Stock17), and `ox, oy` is the rotation point, not
+    the centre: a Blaster's is 5.0px right of it. So a box centred on the origin
+    claimed clear space in every direction, and -- sections sorting by depth --
+    the front plate's empty sheet shadowed everything behind it. Measured on the
+    Bolthole, it named the right part on 39.9% of painted pixels and claimed a
+    part on 47.6% of the background.
+
+    The renderer's id buffer already holds the answer per pixel, so it is the
+    key here rather than a second implementation. Runs the page's own JS under
+    node; without node there is nothing to run and the gate says so.
+    """
+    import base64
+    import json
+    import shutil
+    import subprocess
+
+    node = shutil.which('node')
+    if node is None:
+        print('  (page pick: node not installed, not run)')
+        return
+
+    import render
+    import serve
+    import numpy as np
+    from PIL import Image
+
+    sc = scene.build(model.load(BOLTHOLE))
+    _img, ids, info = render.render(sc, scale=1, pad=8)
+
+    # The scene the *browser* gets, not the one the renderer holds: `for_web`
+    # rewrites every `spr` into a token and inlines the pixels, and the page
+    # keys its caches by that. Decoding the alpha back out of those data URIs
+    # rather than re-reading the files is what makes this end to end -- a token
+    # that named the wrong pixels would show up here as a pick that misses.
+    web = scene.for_web(sc)
+    alphas = {}
+    for tok, uri in web['sprites'].items():
+        px = np.array(Image.open(io.BytesIO(
+            base64.b64decode(uri.split(',', 1)[1]))).convert('RGBA'))
+        alphas[tok] = {'w': int(px.shape[1]),
+                       'a': base64.b64encode(
+                           np.ascontiguousarray(px[..., 3]).tobytes()).decode()}
+
+    blob = {'js': serve.PAGE.split('<script>')[1].split('</script>')[0],
+            'ops': web['ops'], 'alphas': alphas,
+            'cx': info['cx'], 'cy': info['cy'],
+            'W': int(ids.shape[1]), 'H': int(ids.shape[0]),
+            'ids': base64.b64encode(ids.astype(np.int32).tobytes()).decode()}
+
+    checker = pathlib.Path(__file__).resolve().parent / 'pickcheck.mjs'
+    with tempfile.NamedTemporaryFile('w', suffix='.json') as fh:
+        json.dump(blob, fh)
+        fh.flush()
+        r = subprocess.run([node, str(checker), fh.name],
+                           capture_output=True, text=True)
+    if r.returncode not in (0, 1):
+        ok(False, 'the page pick harness runs', r.stderr.strip()[-300:])
+        return
+    got = json.loads(r.stdout)
+    ok(got['painted'] > 10000 and got['empty'] > 10000,
+       'the pick gate covers a real hull', json.dumps(
+           {k: got[k] for k in ('painted', 'empty')}))
+    ok(got['hitOk'] == got['painted'],
+       'hover names the part the blitter drew, on every painted pixel',
+       got['onArt'] + '  ' + json.dumps(got['bad'][:3]))
+    ok(got['emptyOk'] == got['empty'],
+       'and picks nothing over a sheet\'s clear space',
+       got['onClearSpace'] + '  ' + json.dumps(got['bad'][:3]))
+
+
+def test_bbox_bounds_the_art():
+    """`scene.bbox` contains what the blitter paints, origin off-centre or not.
+
+    It never did for a turret. The corners were taken as +/-w/2 about the op
+    origin, but a Blaster's origin is the base of its barrel, so the box sat
+    5px left of the art and clipped the muzzle at every angle. Whole hulls hid
+    it -- their extremes are set by 80x80 plates whose origin *is* the centre --
+    which is why a rotated turret alone is the case worth pinning.
+    """
+    import render
+    import numpy as np
+
+    sc = scene.build(model.load(BOLTHOLE))
+    blaster = next((o for o in sc['ops'] if o['name'] == 'Blaster'), None)
+    if blaster is None:
+        return
+    for ang in (0, 45, 90, 180):
+        o = dict(blaster)
+        o['x'] = o['y'] = 0.0
+        o['ang'] = float(ang)
+        box = scene.bbox([o])
+        # Frame the render on a box far larger than any candidate. Sizing the
+        # canvas from the box under test would clip the art to it and the test
+        # would pass by construction -- which is how the first draft of this
+        # gate let three of these four angles through.
+        room = [-o['w'] - o['h'], -o['w'] - o['h'], o['w'] + o['h'], o['w'] + o['h']]
+        _im, ids, info = render.render({**sc, 'ops': [o], 'bbox': room},
+                                       scale=1, pad=0)
+        ys, xs = np.where(ids >= 0)
+        art = (xs.min() - info['cx'], ys.min() - info['cy'],
+               xs.max() + 1 - info['cx'], ys.max() + 1 - info['cy'])
+        # One pixel of slack, and it belongs to the renderer rather than to the
+        # box: `_transform` pastes at `round(half - ox)`, so a half-pixel origin
+        # like the Blaster's 6.5 lands the art up to half a pixel off where the
+        # arithmetic puts it, and the cell it falls in rounds that to one. The
+        # default `pad=8` absorbs it. The error this gate exists for is 5px.
+        slack = 1.0
+        ok(box[0] <= art[0] + slack and box[1] <= art[1] + slack
+           and box[2] >= art[2] - slack and box[3] >= art[3] - slack,
+           f'bbox contains a turret rotated {ang} deg',
+           f'box {box} art {list(art)}')
 
 
 def test_corpus_mining():

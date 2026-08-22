@@ -79,6 +79,18 @@ follows `bsf-capture`'s posture rather than `bsf-storytelling`'s.
     turret on the −x flank aims into the hull unless rotated 180°, and rotating
     it swings the body several pixels off its mount — re-seat afterwards.
 
+16a. **A sprite is not its sheet, in either direction.** The origin is not the
+    centre — it is the rotation point, and a Blaster's is the base of its
+    barrel, 5.0px right of centre (`NanoMatrix` 4.5, `PointMaser` and
+    `ParticleGun` 2.5) — and the sheet is mostly empty, a section being 80×80
+    around a plate that fills 4% of it (`BSF_Stock09`) to 27% (`BSF_Stock17`).
+    Anything reasoning about where a part *is* must take corners relative to
+    `ox,oy` and then consult alpha. Assuming a centred box cost the preview's
+    hover pick (39.9% correct) and `scene.bbox`, which clipped a turret's muzzle
+    at every angle and was never the upper bound its docstring claimed. Whole
+    hulls hide it: their extremes are set by 80×80 plates whose origin *is* the
+    centre, which is why the gate for it is a rotated turret on its own.
+
 ### Judgement
 
 17. **Look for the game's own answer before inventing one.** `PointMaser` is
@@ -232,12 +244,24 @@ follows `bsf-capture`'s posture rather than `bsf-storytelling`'s.
 1. **Look first.** `ship tree <file>` for the hierarchy (sections nested,
    mounts listed under their host), `ship render <file> -o out.png --scale 4`
    then read the PNG. The preview from step 0 is the interactive view — it
-   watches the files and repaints whoever wrote them, CLI or ShipMaker. Bare,
+   watches the files and repaints whoever wrote them, CLI or ShipMaker, and
+   **that includes the sprites**: art added, edited or deleted under
+   `Custom sprites/` reaches the open page within a poll, so a section can name
+   a sprite that does not exist yet and you can draw it into place without
+   restarting anything. Bare,
    it watches `mods/ships` and the game's `Custom Ships` and puts them all in
    one dropdown; name a file to have it shown first, a directory to watch that
    instead. The URL carries the hull, `[`/`]` cycle, `0` re-centres, and zoom
    and pan survive a switch so flipping between two hulls compares them
    honestly.
+
+   **Hover reads the art, and reports the whole stack under the cursor.** Since
+   D2 says overlap is how hulls are built, the top of the stack is rarely the
+   whole answer: the HUD lists everything under the cursor with a depth count,
+   `↑`/`↓` walk it without moving the mouse, a click pins it so the cursor can
+   leave, and `peel` (or `p`) hides whatever is drawn *in front of* the current
+   part so a buried plate can actually be seen. That is the fastest way to
+   answer "what is under this?" without running `visibility`.
 2. **Name what you mean before you touch it.** Write a selector, check it with
    `ship select '<query>' <file> --shot sel.png`, and only then edit. Ids move;
    descriptions do not. Grammar in [REFERENCE.md](REFERENCE.md).
