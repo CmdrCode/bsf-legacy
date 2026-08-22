@@ -224,7 +224,7 @@ follows `bsf-capture`'s posture rather than `bsf-storytelling`'s.
     `nSec2a` and that only ShipMaker could re-export. That was true before
     `export.py` and is not true now; rule 21's "export before you commit" is
     the live instruction.) What still needs ShipMaker is **editing** a hull in
-    ShipMaker: a part it has no entry for — `mods/umbracloak.gml`'s module, for
+    ShipMaker: a part it has no entry for — `mods/cloak.gml`'s module, for
     one — is CLI-only, because ShipMaker reads its own catalogue and not the
     game's objects. Say *that* when handing work over.
 21. **`mods/ships/` is the exception to the gitignore, and both halves are
@@ -374,7 +374,7 @@ An edit is finished when all of these hold:
 
 ## Adding a part the game does not have
 
-Done once, for the Umbra Cloak (2026-08-21) — `mods/umbracloak.gml`,
+Done once, for the Umbra Cloak (2026-08-21) — `mods/cloak.gml`,
 `mods/spr_UmbraCloak.png`, `tools/mkmodart.py`. Everything below is read off the
 decrypted object tree rather than guessed, and **none of it is verified in a
 running game yet** (D19a). Reach for it only when no stock object will do; check

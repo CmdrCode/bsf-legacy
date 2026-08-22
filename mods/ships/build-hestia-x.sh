@@ -123,7 +123,7 @@ S arm GatBlaster     "$F" --at=23,0    --parent 11 --arc 30            # forward
 S arm ParticleGun    "$F" --at=-25,0   --parent 12                     # aft particle gun
 S arm AegisDeflector "$F" --at=-25,-56 --parent 3  --mirror            # flux emitters
 
-# The Umbra Cloak. Not a stock part: `mods/umbracloak.gml` builds the object at
+# The Umbra Cloak. Not a stock part: `mods/cloak.gml` builds the object at
 # load, parented to `ctr_Turrets` the way every stock module is, and puts the
 # name in scope on `ctr_Ship` so a compiled hull can mount it. `ship arm` routes
 # it as a module and writes every stat as -1, so the object's own Create is what

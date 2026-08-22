@@ -165,17 +165,19 @@ nm[12]='guidump';    mk[12]='guidump.on';   // menu inventory, diagnostics only
 nm[13]='logo';       mk[13]='logo.on';      // MUST precede legacy: CLEARS GUI_MainTitle's Draw
 nm[14]='legacy';     mk[14]='legacy.on';    // appends one Draw to GUI_MainTitle
 nm[15]='crisp';      mk[15]='crisp.on';     // menu label sprites -> drawn text
-nm[16]='umbracloak'; mk[16]='!umbracloak.off';// new module type: the Umbra Cloak + its sprite
-nm[17]='act2';       mk[17]='!act2.off';    // Act II campaign: paged career menu + episodes (chains act2m1.gml)
-nm[18]='editor';     mk[18]='editor.on';    // MUST follow act2: mission-editor channel, drives its rooms
-nm[19]='shader';     mk[19]='!shader.off';  // pixel shaders over the game's own draws: VISUAL
+nm[16]='shader';     mk[16]='!shader.off';  // pixel shaders over the game's own draws: VISUAL
                                             //   EFFECTS, not performance. Needs bsfshader.dll and
                                             //   d3d8to9; without either it reports off and no-ops
-nm[20]='shaderdemo'; mk[20]='shaderdemo.on';// MUST follow shader: uses its globals. Measurement
-nm[21]='shaderspr';  mk[21]='shaderspr.on'; // MUST follow shader: per-sprite bracket test. Measurement
-nm[22]='cloak';      mk[22]='cloak.on';     // MUST follow shader: ship decloak effect. Demo
-nm[23]='roomtest';   mk[23]='';             // LAST: probes for functions that may not exist, and a
-last = 23;                                  // missing one silently aborts the rest of the file it is in
+nm[17]='shaderdemo'; mk[17]='shaderdemo.on';// MUST follow shader: uses its globals. Measurement
+nm[18]='shaderspr';  mk[18]='shaderspr.on'; // MUST follow shader: per-sprite bracket test. Measurement
+nm[19]='cloak';      mk[19]='!cloak.off';   // the Umbra Cloak: a new module type, and the
+                                            //   cloak it drives. MUST follow shader (uses its
+                                            //   globals) and MUST precede act2, which spawns hulls
+                                            //   that mount it. Absorbed umbracloak.gml.
+nm[20]='act2';       mk[20]='!act2.off';    // Act II campaign: paged career menu + episodes (chains act2m1.gml)
+nm[21]='editor';     mk[21]='editor.on';    // MUST follow act2: mission-editor channel, drives its rooms
+nm[22]='roomtest';   mk[22]='';             // LAST: probes for functions that may not exist, and a
+last = 22;                                  // missing one silently aborts the rest of the file it is in
 
 for (k = 0; k <= last; k += 1) {
     if (mk[k] == '')

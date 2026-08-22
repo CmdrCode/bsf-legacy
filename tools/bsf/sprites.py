@@ -51,7 +51,7 @@ FOLDERS = ('Stock Weapons', 'Stock Misc', 'Doodads', 'Stock Sections', 'Sections
 #: deflectors and boosters read as glowing beads.
 #:
 #: `UmbraCloak` is the one entry the shipped game does not have: it is a module
-#: type `mods/umbracloak.gml` builds at load, parented to `ctr_Turrets` like
+#: type `mods/cloak.gml` builds at load, parented to `ctr_Turrets` like
 #: every stock module. It belongs in this set for the reason the set exists --
 #: the loader reads `l_bullet` off every *weapon* mount, and a module has none,
 #: so filing it as a weapon would cost the whole ship (D19c).
@@ -71,7 +71,7 @@ MOD_ART = paths.REPO / 'mods'
 
 #: ...and for the same reason the exe cache overrides `barrel_pivot()`, so does
 #: this: the origin of a sprite this repo authored is not a thing to infer, it is
-#: the argument `mods/umbracloak.gml` passes to `sprite_add`. The heuristic gets
+#: the argument `mods/cloak.gml` passes to `sprite_add`. The heuristic gets
 #: this one within half a pixel, which is close enough to look right and wrong
 #: enough that the preview and the game would not agree.
 MOD_ORIGIN = {'spr_UmbraCloak': (7, 7)}
