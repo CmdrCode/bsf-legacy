@@ -137,6 +137,8 @@ global.ck_any = 0;
 // ck_h instead would also release the slot and change how the ship is drawn,
 // which is precisely the confound the pair exists to avoid.
 global.ck_bypass = 0;
+//: Set by the rig: whether a spawned hull carries the UmbraCloak name.
+global.ck_nameok = -1;
 if (variable_global_exists('sh_ok')) {
     if (global.sh_ok >= 1) {
         global.ck_h = external_call(global.sh_compile, 'mods/decloak.hlsl');
@@ -659,6 +661,20 @@ if (file_exists('mods/cloak_demo.on')) {
 // needing a custom hull in the room: the mount only has to exist and name the
 // ship as its l_owner, which is exactly what the part scan and the controller
 // look for.
+// Does the appended Create actually run on ctr_Ship? Its stock body ends
+// `if room != rm_ChooseShips then exit`, and that append is what puts the
+// UmbraCloak name in scope for a compiled .shp. Asked of a real spawned hull
+// rather than reasoned about.
+        '  if (rtick == 139) {' +
+        '    var seen2;' +
+        '    seen2 = 0;' +
+        '    with (ctr_Ship) {' +
+        '      if (seen2 == 0) {' +
+        '        seen2 = 1;' +
+        '        global.ck_nameok = variable_local_exists("UmbraCloak");' +
+        '      }' +
+        '    }' +
+        '  }' +
         '  if (rtick == 140) {' +
         '    var made;' +
         '    made = 0;' +
@@ -699,6 +715,7 @@ if (file_exists('mods/cloak_demo.on')) {
         '      + " slots=" + string(global.ck_nslot)' +
     '      + " any=" + string(global.ck_any)' +
     '      + " mods=" + string(instance_number(global.bsf_umbracloak))' +
+    '      + " hull_append=" + string(global.ck_nameok)' +
         '      + " binds=" + string(external_call(global.sh_stat, 2))' +
         '      + " fails=" + string(external_call(global.sh_stat, 3))' +
         '      + " err=" + string(external_call(global.sh_err)));' +
