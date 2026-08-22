@@ -176,8 +176,12 @@ nm[19]='cloak';      mk[19]='!cloak.off';   // the Umbra Cloak: a new module typ
                                             //   that mount it. Absorbed umbracloak.gml.
 nm[20]='act2';       mk[20]='!act2.off';    // Act II campaign: paged career menu + episodes (chains act2m1.gml)
 nm[21]='editor';     mk[21]='editor.on';    // MUST follow act2: mission-editor channel, drives its rooms
-nm[22]='roomtest';   mk[22]='';             // LAST: probes for functions that may not exist, and a
-last = 22;                                  // missing one silently aborts the rest of the file it is in
+nm[22]='minimap';    mk[22]='!minimap.off'; // aspect-correct minimap. MUST follow act2: both append
+                                            //   to ctr_GUI's End Step and appended actions run in
+                                            //   the order they were added, so the map is redrawn
+                                            //   after a bounds: limit has clamped the camera
+nm[23]='roomtest';   mk[23]='';             // LAST: probes for functions that may not exist, and a
+last = 23;                                  // missing one silently aborts the rest of the file it is in
 
 for (k = 0; k <= last; k += 1) {
     if (mk[k] == '')

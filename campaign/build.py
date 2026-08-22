@@ -1516,25 +1516,47 @@ object_event_add(ctr_GUI, 3, 2,
 //
 // So the geometry comes from what is legible from anywhere: the minimap is
 // GUI_MinimapSize * global.l_zoom square, pinned to the top-right corner of the
-// view, and a world x lands at that same fraction of it. That is the stock
-// transform written out rather than borrowed, and it needs nothing but the view
-// and the room.
+// view, and a world point lands at `origin + offset + world * scale` inside it.
+//
+// ⚠ The scale is NOT `GUI_MinimapSize / room_width` any more, and asking for it
+// per axis is what this reads from globals to avoid. mods/minimap.gml gives the
+// map one scale for both axes so a wide room draws as a wide strip rather than
+// squashed into the square (see its header), and publishes the transform
+// exactly so a second drawer like this one cannot disagree with it. The fog has
+// to land on the same pixels as the blips it is hiding, or the limit reads as a
+// rendering fault instead of a wall.
+//
+// The fallback is the stock transform, per-axis and unoffset, for a game with
+// that module turned off (mods/minimap.off) -- which is why `uy` is carried
+// separately rather than assumed equal to `u`.
 object_event_add(ctr_GUI, 8, 0,
     'if (global.{g}_bounds = 1) {{' +
     'if (room = global.act2_room{slot}) {{' +
-    'var mw, mx1, mx2, my1, fx;' +
-    'mw = GUI_MinimapSize * global.l_zoom;' +
+    'var mw, mx1, mx2, my1, my2, fx, z, u, uy, ox, oy;' +
+    'if (room_width <= 0) exit;' +
+    'if (room_height <= 0) exit;' +
+    'z = global.l_zoom;' +
+    'mw = GUI_MinimapSize * z;' +
     'mx1 = view_xview[0] + view_wview[0] - mw;' +
-    'mx2 = view_xview[0] + view_wview[0] - 1;' +
-    'my1 = view_yview[0];' +
-    'fx = mx1 + global.{g}_bx2 * mw / room_width;' +
+    'u = GUI_MinimapSize / room_width; uy = GUI_MinimapSize / room_height;' +
+    'ox = 0; oy = 0;' +
+    'if (variable_global_exists("bsf_mm")) {{' +
+    'if (global.bsf_mm = 1) {{' +
+    'u = global.bsf_mm_u; uy = u;' +
+    'ox = global.bsf_mm_ox; oy = global.bsf_mm_oy;' +
+    '}}' +
+    '}}' +
+    'fx  = mx1 + (ox + global.{g}_bx2 * u) * z;' +
+    'mx2 = mx1 + (ox + room_width * u) * z;' +
+    'my1 = view_yview[0] + oy * z;' +
+    'my2 = view_yview[0] + (oy + room_height * uy) * z;' +
     'if (fx < mx2) {{' +
     'draw_set_color(c_black);' +
     'draw_set_alpha(0.92);' +
-    'draw_rectangle(fx, my1, mx2, my1 + mw, 0);' +
+    'draw_rectangle(fx, my1, mx2, my2, 0);' +
     'draw_set_alpha(1);' +
     'draw_set_color($00FF00);' +
-    'draw_line(fx, my1, fx, my1 + mw);' +
+    'draw_line(fx, my1, fx, my2);' +
     '}}' +
     '}}' +
     '}}');
