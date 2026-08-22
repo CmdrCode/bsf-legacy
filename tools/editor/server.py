@@ -883,8 +883,13 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if p[:1] == ['assets']:
             if not LIB:
                 return self._json({'ok': False, 'why': 'game not found'})
+            # `hulls` is the ship/prop split, sent once with the manifest
+            # rather than discovered a fetch at a time: the picker has to
+            # classify every object the moment it opens, and asking api/ship
+            # 600 times to find out is not a way to draw a list.
             return self._json({'ok': True, 'source': os.path.basename(LIB.source),
-                               'sprites': LIB.manifest(), 'objects': OBJ_SPRITES})
+                               'sprites': LIB.manifest(), 'objects': OBJ_SPRITES,
+                               'hulls': A.hull_objects(OBJ_SPRITES)})
 
         if p[:1] == ['sprite'] and len(p) > 1:
             name, frame = p[1], int(q.get('f', 0))

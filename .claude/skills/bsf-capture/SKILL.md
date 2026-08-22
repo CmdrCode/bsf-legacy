@@ -29,11 +29,58 @@ is a local archive, never something to open.
    desktop. Press buttons via the probe-harness levers, never by clicking.
 3. Refocus the wine desktop **before every synthetic keypress** — the user's
    terminal often sits above it. The user stays hands-off during a take.
-4. For x11grab offsets **trust xrandr, not wmctrl** — under fractional scaling
-   wmctrl reports 2×-scaled coordinates. Derive the offset for your own layout;
-   on the reference desktop the 4K output sits at `+1080,0`.
+4. **The grab rect is the rendered area, and it is measured, never assumed.**
+   Two different things go wrong here and both hand back a plausible-looking
+   frame of the wrong thing, which is why neither announces itself.
+
+   *Which screen.* For x11grab offsets **trust xrandr, not wmctrl** — under
+   fractional scaling wmctrl reports 2×-scaled coordinates. **Derive the offset
+   every time**; the reference desktop has the 4K output at `+1080,0` and the
+   next one measured had it at `+1080,1024`, so reusing that constant grabs a
+   different monitor and hands back a screenshot of something else entirely.
+
+   *Which part of the window.* The game does **not** fill its window.
+   `mods/resolution.gml` sets `window_set_region_scale(-1, 0)` — fit keeping
+   aspect — so a 1600×1120 region in a 3840×2160 wine desktop is drawn as
+   **3086×2160 pillarboxed at +377,0**. Grab `region` at the window origin and
+   you get a corner crop: no HUD, no minimap, and whatever sits past the crop
+   line simply is not in the take. That happened here — a whole capture of the
+   EP9 reveal in which the revealed ship fell outside the frame, and the ship
+   left inside it was a *different* ship the reviewer read as the subject.
+   Measure the rect from a frame instead, as the bounding box of everything
+   that is not black:
+
+       ffmpeg -f x11grab -video_size 3840x2160 -i :99.0 -frames:v 1 \
+         -pix_fmt rgb24 -f rawvideo /tmp/r.raw
+       # then: a = np.fromfile(...).reshape(2160,3840,3)
+       #       np.nonzero(a.max(axis=(0,2)) > 8)[0]   -> 377 .. 3462
+       #       np.nonzero(a.max(axis=(1,2)) > 8)[0]   -> 0 .. 2159
+
+   `_local/captures/hestia-x-reveal-drive.sh` has this as a `measure_rect`
+   function to lift. Round the result down to even dimensions — libx264 refuses
+   odd ones. **Then confirm the take frames what you think it frames**: the HUD
+   column and the minimap are at the region's right edge, so if they are missing
+   the rect is wrong, whatever the footage looks like otherwise.
 5. Never stage a capture in the canonical game dir — work on a scratch copy.
-6. Launch the exe **directly** (`wine BattleshipsForever.exe`, cwd = the game
+   **One game per staged copy**: `mods/edit/{cmd,ack,state}` is a fixed path
+   inside it, so a second instance on the same copy fights the first for the
+   channel *and* for the prefix's virtual desktop — commands stop being acked
+   and the older instance stops rendering mid-take. Kill before relaunching,
+   and confirm the count.
+6. **Prove the display can be captured before you roll.** A locked session and a
+   headless one both leave the game running, stepping and focusable, so every
+   cheap signal says the take is fine while the footage is blank. One frame
+   settles it — a grab of the root under ~5 KB is blank — and
+   `loginctl show-session <id> -p LockedHint --value` names the locked case.
+   Unlocking is the human's to do; your fix is to take it on Xvfb, which cannot
+   be locked and does not touch their desktop. REFERENCE has the encoder
+   signature (100% skipped P-frames) that identifies a take already lost.
+7. **Never `pkill -f` / `pgrep -f` a pattern that appears in your own command.**
+   A heredoc that merely *writes* the pattern counts, so the shell matches
+   itself and `kill` takes out the caller (exit 144). It cost three shells in
+   one session. Use `scripts/gamepids.py`, which walks `/proc` and excludes its
+   own ancestry, or kill explicit PIDs captured at launch.
+8. Launch the exe **directly** (`wine BattleshipsForever.exe`, cwd = the game
    dir). Routing through `wine explorer /desktop=…` breaks the load: no game
    window ever appears, `wine` still exits 0, and the take records an empty
    desktop for its whole length — so nothing reports the failure. Windowing

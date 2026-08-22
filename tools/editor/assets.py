@@ -253,15 +253,42 @@ def _hull_index(root=SHIP_HTML):
 _HULLS = None
 
 
-def ship(name):
-    import json
+def _hull_path(name):
+    """Where `name`'s hull dump is, or '' if it has none.
+
+    Two steps: the dump named for the object exactly, then the squashed index.
+    Both `ship()` and `hull_objects()` ask through here rather than each
+    spelling the rule out, because they must agree — `hull_objects()` is what
+    tells the editor to draw something as a ship, and `ship()` is what has to
+    serve the hull when it does. Two transcriptions of the fallback is one
+    chance for the editor to offer a hull thumbnail that then 404s.
+    """
     global _HULLS
     if _HULLS is None:
         _HULLS = _hull_index()
     p = os.path.join(SHIP_HTML, name.replace(' ', '_') + '.html')
-    if not os.path.exists(p):
-        p = _HULLS.get(re.sub(r'[^a-z0-9]', '', name.lower()), '')
-    if not p or not os.path.exists(p):
+    if os.path.exists(p):
+        return p
+    p = _HULLS.get(re.sub(r'[^a-z0-9]', '', name.lower()), '')
+    return p if p and os.path.exists(p) else ''
+
+
+def hull_objects(names):
+    """Which of `names` are ships rather than props.
+
+    The distinction the editor needs up front. An object's `sprite_index` does
+    not carry it: every stock hull's is `spr_Core`, the core section, because a
+    ship draws its sections and never its own sprite — so the sprite manifest
+    alone makes the Hestia, the Athena and a hundred others indistinguishable
+    from each other and describes none of them. Having the hull is the test.
+    """
+    return sorted(n for n in names if _hull_path(n))
+
+
+def ship(name):
+    import json
+    p = _hull_path(name)
+    if not p:
         return None
     s = open(p, encoding='utf-8').read()
     def grab(const):

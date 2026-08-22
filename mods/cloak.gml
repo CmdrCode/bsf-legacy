@@ -8,13 +8,22 @@
 // kind, so the device is built rather than configured.
 //
 // A ship is cloak-CAPABLE iff it mounts an UmbraCloak. The module owns the
-// rule; a mission may override any ship through three variables it writes on
+// rule; a mission may override any ship through the variables it writes on
 // the hull:
 //
 //   l_cloak_want   0/1    the module writes it; a mission may override
 //   l_cloak_lock   0/1    mission holds the wheel, the module stops writing
 //   l_cloak_now    0..1   the rendered state. 1 = solid, 0 = fully cloaked
 //   l_cloak_hidden 0/1    untargetable. Flips at the START of either transition
+//   l_cloak_snap   0..1   write it to SNAP l_cloak_now there once, then it
+//                         reads -1. `want` picks the destination; this picks
+//                         where the fade starts from, which is the only way to
+//                         make a ship arrive already cloaked.
+//
+// All four are safe to write the same Step a hull is created, before this file
+// has ever seen it: the lazy init below supplies defaults for what is unset and
+// overwrites nothing. That is the ordering every mission has -- spawn and write
+// in Step, module runs in End Step -- so it is the one that has to work.
 //
 // ---------------------------------------------------------------------------
 // THREE THINGS THE DESIGN NOTE GOT WRONG, ALL READ OFF THE OBJECT TREE
@@ -274,8 +283,20 @@ body =
 
 // ---- lazy init. ctr_Ship's Create exits before an append in gameplay rooms,
 //      so the state is created the first time it is needed instead.
+//
+//      IT SUPPLIES DEFAULTS; IT DOES NOT OVERWRITE. The guard is on
+//      `l_cloak_now`, but `want` and `lock` used to be assigned flat alongside
+//      it -- so anything a mission had already written to them was wiped the
+//      first time this pass saw the ship. That is not a corner case, it is the
+//      normal case: a mission spawns a hull and writes its cloak state in the
+//      same Step, and this runs in End Step, so the module ALWAYS gets there
+//      second. The reveal it broke looked like a spawn that never appeared --
+//      snapped to cloaked by l_cloak_snap, then held there by the want=1 and
+//      lock=0 this block had just restored.
   '      if (!variable_local_exists("l_cloak_now")) {' +
-  '        l_cloak_now = 1; l_cloak_want = 1; l_cloak_lock = 0;' +
+  '        l_cloak_now = 1;' +
+  '        if (!variable_local_exists("l_cloak_want")) l_cloak_want = 1;' +
+  '        if (!variable_local_exists("l_cloak_lock")) l_cloak_lock = 0;' +
   '        l_cloak_hidden = 0;' +
   '        ck_bud = 100; ck_dw = 0; ck_lk = 0; ck_slot = -1;' +
   '        ck_np = 0; ck_rescan = 0; ck_seen = 0; ck_hd = depth;' +
@@ -306,6 +327,28 @@ body =
   '              }' +
   '            }' +
   '          }' +
+  '        }' +
+  '      }' +
+
+// ---- l_cloak_snap: a mission says where the fade should START from.
+//      `l_cloak_want` only names the destination, and the transition is a
+//      2-second ease from wherever the ship already is -- so a hull that
+//      spawns solid (which is what the lazy init above makes it) can only ever
+//      fade OUT first. A mission that wants a ship to ARRIVE cloaked and
+//      uncloak on cue has no way to say so.
+//
+//      So: write l_cloak_snap on the hull and the next pass adopts it as
+//      l_cloak_now, once, then sets it to -1 to mark it spent. -1 rather than
+//      deleting it, because GML cannot delete an instance variable.
+//
+//      AFTER the rescan and not before it, and that ordering is the whole
+//      trick: the rescan only runs while l_cloak_now >= 1, so snapping to 0
+//      any earlier would skip it, leave ck_np at 0, and cloak a bare hull
+//      while every section, turret and doodad stayed at full brightness.
+  '      if (variable_local_exists("l_cloak_snap")) {' +
+  '        if (l_cloak_snap >= 0) {' +
+  '          l_cloak_now = l_cloak_snap;' +
+  '          l_cloak_snap = -1;' +
   '        }' +
   '      }' +
 
@@ -743,15 +786,34 @@ if (file_exists('mods/cloak_demo.on')) {
         '        m = instance_create(x, y, global.bsf_umbracloak);' +
         '        m.l_owner = id;' +
         '        m.rs_owner = id;' +
+// The three mission writes go here, on the SAME tick the mount appears and
+// therefore before this ship has ever been through the End Step pass. That
+// ordering is the whole point of testing it: it is what a mission does (spawn
+// and write in one Step; the module runs second), and it is the case that was
+// broken while a rig that wrote at 150 -- ten ticks after the pass had already
+// initialised the ship -- reported the lever working.
+        '        l_cloak_lock = 1; l_cloak_want = 0; l_cloak_snap = 0;' +
         '      }' +
         '    }' +
         '  }' +
 // Polarity: l_cloak_want = 1 means WANTS TO BE CLOAKED, so a decloak is driven
-// by clearing it, not setting it. 150 takes the wheel and snaps the ship fully
-// cloaked; 151 asks for a decloak, and the 60-step transition runs under the
-// capture window that follows.
+// by clearing it, not setting it. The uncloak now starts at 140 with the mount
+// (above), so what these two do is prove the lever still works on a ship the
+// module HAS already seen -- the other ordering -- by re-cloaking and releasing
+// once more before the capture window.
+//
+// The snap goes through `l_cloak_snap` rather than assigning `l_cloak_now`
+// directly, because that is the lever a MISSION has to use and this rig is the
+// only thing that exercises it. Writing l_cloak_now from outside is safe here
+// and nowhere else: by 150 the module has long since initialised this ship. Do
+// it to a hull the module has not seen yet -- a mission revealing a ship the
+// frame it spawns -- and the write CREATES l_cloak_now, the lazy init's
+// variable_local_exists guard goes false, ck_bud/ck_np/ck_slot are never made,
+// and the whole End Step pass aborts silently for every cloaked ship in the
+// room. l_cloak_snap exists so that write has somewhere safe to land.
+        '  if (rtick == 148) { with (ctr_Ship) l_cloak_want = 1; }' +
         '  if (rtick == 150) {' +
-        '    with (ctr_Ship) { l_cloak_lock = 1; l_cloak_want = 1; l_cloak_now = 0; }' +
+        '    with (ctr_Ship) { l_cloak_lock = 1; l_cloak_want = 1; l_cloak_snap = 0; }' +
         '  }' +
         '  if (rtick == 151) { with (ctr_Ship) l_cloak_want = 0; }' +
 // Re-cloak, so the adjacent pair below falls inside a LIVE transition. The slot

@@ -73,8 +73,8 @@ global.a2m1_d2 = 0.4;
 global.a2m1_dens = 0.18;
 global.a2m1_mrow[0] = "...........................................#..@@@@@@@@@@@@@@@@@##......#@@@@@......############@@@@@@...........";
 global.a2m1_mrow[1] = "........#.........#....................###.###@@@@@@@@@@@@@@@@@###.....##@@@........#############@@@@@######....";
-global.a2m1_mrow[2] = "##.################...................#####..##@@@@@@@@@@@@@@@####.....#####.........###.#######.@@@@@#######...";
-global.a2m1_mrow[3] = "#....#@@@.....##.........####........@#####..########################...###...............#####..@@@@@########..";
+global.a2m1_mrow[2] = "##.################...................#####..##@@@@@@@@@@@@@@@####.....#####.................###.@@@@@#######...";
+global.a2m1_mrow[3] = "#....#@@@.....##.........####........@#####..########################...###......................@@@@@########..";
 global.a2m1_mrow[4] = "#....#@@@@@@.#.....@@@###...##.......@#####...###############.########............................@@@#########..";
 global.a2m1_mrow[5] = "#.....@@@@@@@......@@@#......#####...@@###.......................#####............................#######@@@###.";
 global.a2m1_mrow[6] = "#...####.@@@@......@@@...........................................#####............................######@@@@@##.";
@@ -105,7 +105,7 @@ global.a2m1_mrow[30] = ".#.......................####...........................
 global.a2m1_mrow[31] = ".##......................#####......................................................................###@@@@@####";
 global.a2m1_mrow[32] = ".##......................#...##............#.......................................................###@@@@@@####";
 global.a2m1_mrow[33] = "..#......................#####@@@.................................................................####@@@@@@@##.";
-global.a2m1_mrow[34] = "..#@@@.....................##.@@@..............##############.@@@..........@@@...................#####@@@@@@@##.";
+global.a2m1_mrow[34] = "..#@@@.....................##.@@@..............##############.@@@..........@@....................#####@@@@@@@##.";
 global.a2m1_mrow[35] = "..#@@@........................@@@..............@@@@@@@@@@@@@@@@@@@........@@@@@.........@@@####..####@@@@@@@@##.";
 global.a2m1_mrow[36] = "..@@@@.........................##.............#@@@@@@@@@@@@@@@@@@@@.......@@@@@........@@@@@####.###@@@@@@@@##..";
 global.a2m1_mrow[37] = "..@@@@#........##...#...........#.......#######@@@@@@@@@@@@@@@@@@@@.......@@@@@........@@@@@########@@@@@####...";
@@ -571,19 +571,22 @@ object_event_add(global.a2m1_ctr, 2, 2,
     'global.a2m1_station = noone;' +
     'if (file_exists("mods/ships/station_bolthole.shp")) {' +
     'with (ctr_Spawner) instance_destroy();' +
-    'global.a2m1_imp = importShip("mods/ships/station_bolthole.shp",2,4269,1102);' +
+    'global.a2m1_imp = importShip("mods/ships/station_bolthole.shp",2,4450,914);' +
     'with (ctr_Spawner) instance_destroy();' +
     'if (global.a2m1_imp >= 0) {' +
-    'global.a2m1_station = instance_create(4269,1102,global.a2m1_imp);' +
+    'global.a2m1_station = instance_create(4450,914,global.a2m1_imp);' +
     '}' +
     '}' +
-    'if (instance_exists(global.a2m1_station)) { global.a2m1_station.l_holdposition = true; global.a2m1_station.l_myship = 0; global.a2m1_station.l_thrust = 0; global.a2m1_station.l_maxspeed = 0; global.a2m1_station.l_turning = 0; global.a2m1_station.direction = 90; global.a2m1_station.image_angle = 90; };' +
-    'instance_create(3955,461,ter_Planet);' +
-    'global.a2m1_berth1 = instance_create(3790,707,Hecate); global.a2m1_berth1.l_holdposition = true; global.a2m1_berth1.l_myship = 0; global.a2m1_berth1.l_thrust = 0; global.a2m1_berth1.l_maxspeed = 0; global.a2m1_berth1.l_turning = 0; global.a2m1_berth1.direction = 270; global.a2m1_berth1.image_angle = 270;' +
-    'global.a2m1_berth2 = instance_create(3989,775,Cronus); global.a2m1_berth2.l_holdposition = true; global.a2m1_berth2.l_myship = 0; global.a2m1_berth2.l_thrust = 0; global.a2m1_berth2.l_maxspeed = 0; global.a2m1_berth2.l_turning = 0; global.a2m1_berth2.direction = 270; global.a2m1_berth2.image_angle = 270;' +
-    'global.a2m1_berth3 = instance_create(4560,707,Athena); global.a2m1_berth3.l_holdposition = true; global.a2m1_berth3.l_myship = 0; global.a2m1_berth3.l_thrust = 0; global.a2m1_berth3.l_maxspeed = 0; global.a2m1_berth3.l_turning = 0; global.a2m1_berth3.direction = 270; global.a2m1_berth3.image_angle = 270;' +
-    'global.a2m1_berth4 = instance_create(4737,800,Hestia); global.a2m1_berth4.l_holdposition = true; global.a2m1_berth4.l_myship = 0; global.a2m1_berth4.l_thrust = 0; global.a2m1_berth4.l_maxspeed = 0; global.a2m1_berth4.l_turning = 0; global.a2m1_berth4.direction = 270; global.a2m1_berth4.image_angle = 270;' +
+    'if (instance_exists(global.a2m1_station)) { global.a2m1_station.l_holdposition = true; global.a2m1_station.l_myship = 0; global.a2m1_station.l_thrust = 0; global.a2m1_station.l_maxspeed = 0; global.a2m1_station.l_turning = 0; global.a2m1_station.direction = 180; global.a2m1_station.image_angle = 180; };' +
+    'instance_create(3810,1228,ter_Planet);' +
+    'global.a2m1_berth1 = instance_create(4056,1392,Hecate); global.a2m1_berth1.l_holdposition = true; global.a2m1_berth1.l_myship = 0; global.a2m1_berth1.l_thrust = 0; global.a2m1_berth1.l_maxspeed = 0; global.a2m1_berth1.l_turning = 0; global.a2m1_berth1.direction = 0; global.a2m1_berth1.image_angle = 0;' +
+    'global.a2m1_berth2 = instance_create(4124,1194,Cronus); global.a2m1_berth2.l_holdposition = true; global.a2m1_berth2.l_myship = 0; global.a2m1_berth2.l_thrust = 0; global.a2m1_berth2.l_maxspeed = 0; global.a2m1_berth2.l_turning = 0; global.a2m1_berth2.direction = 0; global.a2m1_berth2.image_angle = 0;' +
+    'global.a2m1_berth3 = instance_create(4056,622,Athena); global.a2m1_berth3.l_holdposition = true; global.a2m1_berth3.l_myship = 0; global.a2m1_berth3.l_thrust = 0; global.a2m1_berth3.l_maxspeed = 0; global.a2m1_berth3.l_turning = 0; global.a2m1_berth3.direction = 0; global.a2m1_berth3.image_angle = 0;' +
+    'global.a2m1_berth4 = instance_create(4148,446,Hestia); global.a2m1_berth4.l_holdposition = true; global.a2m1_berth4.l_myship = 0; global.a2m1_berth4.l_thrust = 0; global.a2m1_berth4.l_maxspeed = 0; global.a2m1_berth4.l_turning = 0; global.a2m1_berth4.direction = 0; global.a2m1_berth4.image_angle = 0;' +
     'showMessage(0,$00FF00,"[Hint]",global.a2m1_t21,spr_MesHint);');
+object_event_clear(global.a2m1_ctr, 2, 3);
+object_event_add(global.a2m1_ctr, 2, 3,
+    'event_user(0);');
 object_event_clear(global.a2m1_ctr, 2, 5);
 object_event_add(global.a2m1_ctr, 2, 5,
     'if (global.a2m1_meteors = 1) {' +
@@ -693,7 +696,7 @@ object_event_add(global.a2m1_ctr, 7, 10,
     'centreCamera(4297,917,90);' +
     'global.lasteventx = 4297; global.lasteventy = 917;' +
     'global.a2m1_cll = 0;' +
-    'if (instance_exists(ctr_GUI)) ctr_GUI.l_zoomtar = 1.3;' +
+    'if (instance_exists(ctr_GUI)) ctr_GUI.l_zoomtar = 1.55;' +
     'global.a2m1_bounds = 0;' +
     'showMessage(0,$00FF00,"Fleet HQ",global.a2m1_t10,spr_MesHQ);' +
     '}' +
@@ -711,47 +714,62 @@ object_event_add(global.a2m1_ctr, 7, 10,
     'global.ed_beat = 19;' +
     'global.ed_beatseq += 1;' +
     'showMessage(0,$00FF00,"Fleet Admiral Hong",global.a2m1_t13,spr_MesHong);' +
-    'g = instance_create(4247,825,MoveToArea); g.l_target = global.a2m1_ship; showPing(4247,825);' +
+    'g = instance_create(4174,936,MoveToArea); g.l_target = global.a2m1_ship; showPing(4174,936);' +
     '}' +
     'else if (l_messagecount = 21) {' +
     'global.ed_beat = 21;' +
     'global.ed_beatseq += 1;' +
-    'global.a2m1_hestiax = instance_create(4244,701,Hestia);' +
-    'showPing(4244,701);' +
-    'showMessage(0,$00FF00,"Fleet Admiral Hong",global.a2m1_t14,spr_MesHong);' +
+    'global.a2m1_hestiax = noone;' +
+    'if (file_exists("mods/ships/hestia_x_erebus.shp")) {' +
+    'with (ctr_Spawner) instance_destroy();' +
+    'global.a2m1_imp = importShip("mods/ships/hestia_x_erebus.shp",2,3968,942);' +
+    'with (ctr_Spawner) instance_destroy();' +
+    'if (global.a2m1_imp >= 0) {' +
+    'global.a2m1_hestiax = instance_create(3968,942,global.a2m1_imp);' +
+    '}' +
+    '}' +
+    'if (instance_exists(global.a2m1_hestiax)) { global.a2m1_hestiax.direction = 90; global.a2m1_hestiax.image_angle = 90; };' +
+    'showPing(3968,942);' +
+    'with (global.a2m1_hestiax) { l_cloak_lock = 1; l_cloak_want = 0; l_cloak_snap = 0; };' +
+    'l_messagecount = 22; alarm[3] = 75;' +
     '}' +
     'else if (l_messagecount = 22) {' +
     'global.ed_beat = 22;' +
     'global.ed_beatseq += 1;' +
-    'showMessage(0,$00FF00,"Fleet Admiral Hong",global.a2m1_t15,spr_MesHong);' +
+    'showMessage(0,$00FF00,"Fleet Admiral Hong",global.a2m1_t14,spr_MesHong);' +
     '}' +
     'else if (l_messagecount = 23) {' +
     'global.ed_beat = 23;' +
     'global.ed_beatseq += 1;' +
-    'showMessage(0,$00FF00,"Fleet Admiral Hong",global.a2m1_t16,spr_MesHong);' +
+    'showMessage(0,$00FF00,"Fleet Admiral Hong",global.a2m1_t15,spr_MesHong);' +
     '}' +
     'else if (l_messagecount = 24) {' +
     'global.ed_beat = 24;' +
     'global.ed_beatseq += 1;' +
-    'showMessage(0,$00FF00,"Fleet Admiral Hong",global.a2m1_t17,spr_MesHong);' +
+    'showMessage(0,$00FF00,"Fleet Admiral Hong",global.a2m1_t16,spr_MesHong);' +
     '}' +
     'else if (l_messagecount = 25) {' +
     'global.ed_beat = 25;' +
     'global.ed_beatseq += 1;' +
-    'showMessage(0,$00FF00,"Fleet Admiral Hong",global.a2m1_t18,spr_MesHong);' +
+    'showMessage(0,$00FF00,"Fleet Admiral Hong",global.a2m1_t17,spr_MesHong);' +
     '}' +
     'else if (l_messagecount = 26) {' +
     'global.ed_beat = 26;' +
     'global.ed_beatseq += 1;' +
-    'showMessage(0,c_red,"New Objective",global.a2m1_t19,spr_MesObj);' +
+    'showMessage(0,$00FF00,"Fleet Admiral Hong",global.a2m1_t18,spr_MesHong);' +
     '}' +
     'else if (l_messagecount = 27) {' +
     'global.ed_beat = 27;' +
     'global.ed_beatseq += 1;' +
-    'showMessage(0,$00FF00,"Fleet Admiral Hong",global.a2m1_t20,spr_MesHong);' +
+    'showMessage(0,c_red,"New Objective",global.a2m1_t19,spr_MesObj);' +
     '}' +
     'else if (l_messagecount = 28) {' +
     'global.ed_beat = 28;' +
+    'global.ed_beatseq += 1;' +
+    'showMessage(0,$00FF00,"Fleet Admiral Hong",global.a2m1_t20,spr_MesHong);' +
+    '}' +
+    'else if (l_messagecount = 29) {' +
+    'global.ed_beat = 29;' +
     'global.ed_beatseq += 1;' +
     'global.a2m1_won = 1; missionSucc();' +
     '}');
@@ -776,11 +794,21 @@ object_event_add(global.a2m1_ctr, 7, 11,
     'centreCamera(4297,917,90);' +
     'global.lasteventx = 4297; global.lasteventy = 917;' +
     'global.a2m1_cll = 0;' +
-    'if (instance_exists(ctr_GUI)) ctr_GUI.l_zoomtar = 1.3;' +
+    'if (instance_exists(ctr_GUI)) ctr_GUI.l_zoomtar = 1.55;' +
     'global.a2m1_bounds = 0;' +
     '} }' +
     'if (l_seek >= 21) { if (l_seek_from < 21) {' +
-    'global.a2m1_hestiax = instance_create(4244,701,Hestia);' +
+    'global.a2m1_hestiax = noone;' +
+    'if (file_exists("mods/ships/hestia_x_erebus.shp")) {' +
+    'with (ctr_Spawner) instance_destroy();' +
+    'global.a2m1_imp = importShip("mods/ships/hestia_x_erebus.shp",2,3968,942);' +
+    'with (ctr_Spawner) instance_destroy();' +
+    'if (global.a2m1_imp >= 0) {' +
+    'global.a2m1_hestiax = instance_create(3968,942,global.a2m1_imp);' +
+    '}' +
+    '}' +
+    'if (instance_exists(global.a2m1_hestiax)) { global.a2m1_hestiax.direction = 90; global.a2m1_hestiax.image_angle = 90; };' +
+    'with (global.a2m1_hestiax) { l_cloak_lock = 1; l_cloak_want = 0; l_cloak_snap = 0; };' +
     '} }' +
     'l_seek_from = l_seek;' +
     'global.ed_beat = l_seek;' +
@@ -806,7 +834,8 @@ object_event_add(global.a2m1_ctr, 7, 11,
     'else if (l_seek = 25) l_messagecount = 26;' +
     'else if (l_seek = 26) l_messagecount = 27;' +
     'else if (l_seek = 27) l_messagecount = 28;' +
-    'else if (l_seek = 28) l_messagecount = 29;');
+    'else if (l_seek = 28) l_messagecount = 29;' +
+    'else if (l_seek = 29) l_messagecount = 30;');
 object_event_clear(global.a2m1_ctr, 8, 0);
 object_event_add(global.a2m1_ctr, 8, 0,
     'var vx, vy, vw, vh, i, shx, shy, shr, shp, shf, shs;' +

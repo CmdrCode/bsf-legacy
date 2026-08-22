@@ -1,6 +1,17 @@
 #!/usr/bin/env python3
-"""Tiny HTTP server with Range support (Chrome needs 206 responses to play video)."""
-import os, re, sys
+"""Tiny HTTP server with Range support (Chrome needs 206 responses to play video).
+
+    serve_range.py [PORT] [DIR] [HOST]
+
+HOST defaults to 127.0.0.1 and `tailscale` resolves to this node's tailnet
+address. Loopback is the default on purpose: this serves a directory with no
+authentication of any kind, and `_local/` is the folder that is private by
+design. `tailscale` binds that one address and nothing else, so the LAN does not
+get a copy of the offer -- the same reason tools/editor/server.py refuses to
+bind a wildcard without being asked. 0.0.0.0 is available but you have to type
+it, and you should know why you are.
+"""
+import os, re, subprocess, sys
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
 
@@ -45,7 +56,20 @@ class RangeHandler(SimpleHTTPRequestHandler):
             left -= len(buf)
 
 
+def resolve_host(name):
+    if name != "tailscale":
+        return name
+    out = subprocess.run(["tailscale", "ip", "-4"], capture_output=True, text=True)
+    addr = out.stdout.strip().splitlines()
+    if not addr:
+        sys.exit("tailscale ip -4 returned nothing -- is tailscaled up?")
+    return addr[0]
+
+
 if __name__ == "__main__":
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 8735
-    os.chdir(sys.argv[2] if len(sys.argv) > 2 else ".")
-    ThreadingHTTPServer(("127.0.0.1", port), RangeHandler).serve_forever()
+    root = sys.argv[2] if len(sys.argv) > 2 else "."
+    host = resolve_host(sys.argv[3] if len(sys.argv) > 3 else "127.0.0.1")
+    os.chdir(root)
+    print(f"serving {os.getcwd()} on http://{host}:{port}/", flush=True)
+    ThreadingHTTPServer((host, port), RangeHandler).serve_forever()

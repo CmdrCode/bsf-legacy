@@ -346,6 +346,7 @@ window.Core = (function () {
     else if (onoff(b.eerie) === 'off') push('eerie', '◌', 'ambience', 'stop eerie');
     if (b.interference != null) push('interference', '≋', 'interference', Interf.label(b.interference));
     if (b.autosave) push('autosave', '◉', 'autosave', 'unless difficulty = Hard');
+    if (b.pause) push('pause', '⏱', 'hold', `${b.pause} steps (${(b.pause / 30).toFixed(1)}s) before the next beat`);
     if (b.camera) push('camera', '▣', 'camera', `(${b.camera.x}, ${b.camera.y}) speed ${b.camera.speed == null ? 60 : b.camera.speed}`,
       { type: 'camera', x: b.camera.x, y: b.camera.y });
     (b.spawn || []).forEach((sp) => push('spawn', '◆', 'spawn',
@@ -387,7 +388,7 @@ window.Core = (function () {
     const st = {
       spawns: [], gatesDone: [], activeGate: null, meteors: false,
       interference: { ships: false, clouds: false },
-      music: null, eerie: false, camera: { x: m.player.x, y: m.player.y },
+      music: null, eerie: false, camera: { x: m.player.x, y: m.player.y, zoom: 1 },
       objective: null, say: null, saves: 0, won: false,
       // The three that do not start at "off". The camera limit is re-asserted
       // on every mission entry by the compiler's Create block, so a mission
@@ -412,7 +413,11 @@ window.Core = (function () {
       if (onoff(b.controls) === 'on') st.controls = true;
       if (onoff(b.controls) === 'off') st.controls = false;
       if (b.autosave) st.saves++;
-      if (b.camera) st.camera = { x: b.camera.x, y: b.camera.y };
+      // zoom carries forward when a camera beat does not restate it: the beat
+      // assigns ctr_GUI.l_zoomtar and nothing resets it, so the view stays
+      // where the last beat to name a zoom left it.
+      if (b.camera) st.camera = { x: b.camera.x, y: b.camera.y,
+        zoom: b.camera.zoom == null ? st.camera.zoom : b.camera.zoom };
       (b.spawn || []).forEach((sp) => st.spawns.push(sp));
       if (b.objective != null) st.objective = b.objective;
       if (b.say) st.say = b.say;
@@ -428,7 +433,7 @@ window.Core = (function () {
   // Same rules build.py enforces; the editor should never let you author past them.
   const BEAT_KEYS = ['note', 'start', 'say', 'objective', 'gate', 'gate_at', 'wait', 'autosave',
     'music', 'eerie', 'meteors', 'camera', 'spawn', 'ping', 'win', 'exec', 'interference',
-    'bounds', 'surge', 'controls'];
+    'bounds', 'surge', 'controls', 'pause'];
 
   /* `note:` — why this beat is the way it is, carried *as data*.
    *
@@ -545,6 +550,19 @@ window.Core = (function () {
       if (b.gate != null && !m.gates[b.gate]) errs.push({ where, msg: `gate ${b.gate} does not exist` });
       if (b.music && ['stop', 'theme', 'battle'].indexOf(b.music) < 0)
         errs.push({ where, msg: 'music must be stop | theme | battle' });
+      // Same three rules build.py enforces. A pause on a beat that already
+      // waits is not harmless-but-useless — it reads as a delay the author
+      // asked for and did not get, which is worse than no delay at all.
+      if ('pause' in b) {
+        if (!Number.isInteger(b.pause) || b.pause < 1)
+          errs.push({ where, msg: 'pause must be a whole number of steps, 1 or more' });
+        if (b.say || b.objective != null)
+          errs.push({ where, msg: 'pause: does nothing on a beat that shows a message — the '
+            + 'panel already holds the beat. Move it to a silent beat before this one.' });
+        if (b.win)
+          errs.push({ where, msg: 'pause: does nothing on a win beat — the mission ends '
+            + 'rather than handing over' });
+      }
       // Both forms of ping:. A link that resolves to nothing is an error — the
       // build drops the ping entirely, and silently losing the thing that tells
       // the player where to look is not a playtest discovery. A *fixed* ping far
@@ -1102,12 +1120,17 @@ window.Core = (function () {
       label(pheld ? `${m.player.object.toUpperCase()}  ·  ${m.player.x}, ${m.player.y}` : m.player.object.toUpperCase(),
         px, py - Math.max(14, S(70)), pheld ? HOT : PHOS, 9);
 
-    // camera frame — the game's view is 1024x768
+    // camera frame — the game's view is 1024x768 AT ZOOM 1, and ctr_GUI scales
+    // both axes by l_zoom off exactly that. Drawing the box at a fixed 1024x768
+    // made the overlay lie about every beat that sets `zoom:` — it showed the
+    // Bolthole reveal overflowing a frame the beat had already zoomed out to
+    // contain, which is the opposite of what the box is for.
     if (o.camera !== false) {
       const cam = st ? st.camera : (focus && focus.camera) || null;
       if (cam) {
+        const z = cam.zoom == null ? 1 : cam.zoom, w = 1024 * z, h = 768 * z;
         ctx.save(); ctx.setLineDash([4, 4]); ctx.strokeStyle = 'rgba(198,211,205,0.45)'; ctx.lineWidth = 1;
-        ctx.strokeRect(X(cam.x - 512), Y(cam.y - 384), S(1024), S(768)); ctx.restore();
+        ctx.strokeRect(X(cam.x - w / 2), Y(cam.y - h / 2), S(w), S(h)); ctx.restore();
       }
     }
 
@@ -1249,8 +1272,12 @@ window.Core = (function () {
     L.push('beats:');
     // `note` first: it is why the rest of the beat looks like this, and a reason
     // printed under its conclusion is a footnote rather than an explanation.
+    // `pause` sits last with `wait`: both are how the beat HANDS OVER rather
+    // than something it does, and a key missing from this list is silently
+    // dropped on apply — the editor re-serialises from its model, so anything
+    // it does not name stops existing the first time a mission is saved.
     const ORDER = ['note', 'start', 'controls', 'music', 'eerie', 'interference', 'meteors', 'surge', 'bounds',
-      'autosave', 'camera', 'spawn', 'ping', 'objective', 'say', 'gate', 'gate_at', 'wait', 'win', 'exec'];
+      'autosave', 'camera', 'spawn', 'ping', 'objective', 'say', 'gate', 'gate_at', 'wait', 'pause', 'win', 'exec'];
     m.beats.forEach((b) => {
       const rows = [];
       ORDER.forEach((k) => {
@@ -1339,6 +1366,9 @@ window.Core = (function () {
       camera: (m) => ({ camera: { x: Math.round(m.room.width / 2), y: Math.round(m.room.height / 2), speed: 60 } }),
       meteors: () => ({ meteors: true }),
       interference: () => ({ interference: true }),
+      // 60 steps is one full cloak transition, which is the case that wanted
+      // this verb; the extra 15 is so whatever just finished is seen finished.
+      pause: () => ({ pause: 75 }),
       /* Each of these three arrives as the state that *does* something. Two of
          them default on at Create and one defaults off, so "the useful one" is
          not the same word each time: adding `controls: on` to a mission that

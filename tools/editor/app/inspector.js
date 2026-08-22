@@ -100,13 +100,20 @@ window.Inspector = (function () {
 .sprgrid figure:hover, .sprgrid figure.on { border-color:var(--phos); background:#101a18; }
 .sprgrid img { width:56px; height:56px; object-fit:contain; image-rendering:pixelated; display:block; margin:0 auto; }
 .sprgrid figcaption { font-size:8px; color:var(--ink-faint); margin-top:3px; word-break:break-all; }
-/* The object picker has 600-odd entries, so it filters. The grid moves inside a
-   child and the popup becomes a column: header that stays, grid that scrolls. */
+/* The object picker has 600-odd entries, so it filters. The popup becomes a
+   column: the filter stays put and everything under it scrolls.
+
+   ONE scroll region, not one per section. Every .grid used to scroll itself,
+   which was invisible while there were two of them and wrong as soon as there
+   were three — flex shared the height out, so 25 ships got a single visible row
+   with a scrollbar of its own and the eye had no way to run designs → ships →
+   props. The sections scroll together; only the filter is pinned. */
 .sprgrid.objs { display:flex; flex-direction:column; gap:6px; width:328px; overflow:hidden; }
 .sprgrid.objs .filt { font:10.5px/1.4 var(--mono); background:#070d0e; color:var(--ink);
   border:1px solid var(--rule); border-radius:2px; padding:4px 6px; flex:none; }
 .sprgrid.objs .filt:focus { outline:none; border-color:var(--phos); }
-.sprgrid.objs .grid { display:grid; grid-template-columns:repeat(4,74px); gap:6px; overflow:auto; }
+.sprgrid.objs .scroll { overflow:auto; display:flex; flex-direction:column; gap:6px; }
+.sprgrid.objs .grid { display:grid; grid-template-columns:repeat(4,74px); gap:6px; }
 .sprgrid.objs .head { font:9px/1 var(--mono); letter-spacing:.14em; text-transform:uppercase;
   color:#3f5a55; padding:4px 2px 2px; border-top:1px solid var(--rule-soft); flex:none; }
 .sprgrid.objs .head:first-of-type { border-top:0; }
@@ -184,24 +191,39 @@ window.Inspector = (function () {
           <div class="dim">${C.esc(sp.ship)} · click to change</div></div></div>`;
       }
       if (!A || !A.ok) return '<span class="note">no art</span>';
+      // A ship object is previewed as its hull for the same reason a design is:
+      // it has no sprite worth showing. Every stock hull's `sprite_index` is
+      // spr_Core, so the sprite preview named the Hestia "spr_Core" and drew a
+      // four-pixel core section — the same picture, and the same caption, for
+      // every ship in the game.
+      if (A.isShip(obj)) {
+        return `<div class="spr" data-opick="${k}">
+          <canvas class="thumb shipthumb" width="46" height="46" data-obj="${C.esc(obj)}"></canvas>
+          <div><div class="nm">${C.esc(obj)}</div>
+          <div class="dim">a ship the game compiles in · click to change</div></div></div>`;
+      }
       const nm = A.spriteOf(obj);
       const s = nm && A.sprites[nm];
-      const hull = A.ship(obj);
       return `<div class="spr" data-opick="${k}">${s
         ? `<div class="thumb"><img src="api/sprite/${encodeURIComponent(nm)}?f=0" alt=""></div>`
         : '<div class="thumb miss">unknown object</div>'}
         <div><div class="nm">${C.esc(nm || obj)}</div>
-        <div class="dim">${s ? `${s.w}×${s.h}${s.mask ? ' · palette mask' : ''}${hull ? ' · has a hull' : ''}`
+        <div class="dim">${s ? `${s.w}×${s.h}${s.mask ? ' · palette mask' : ''}`
           : 'not in objects_rt'} · click to change</div></div></div>`;
     }
 
-    /* Ship thumbnails are canvases, not <img>: a design has no single sprite,
-       so each one is drawn from its own scene with the map's own blitter. They
-       repaint on Ships.onload because the scene and its art arrive later. */
+    /* Hull thumbnails are canvases, not <img>: a hull has no single sprite, so
+       each one is drawn section by section with the map's own blitter. Both
+       kinds arrive late, so both repaint from here.
+
+       Two kinds and two owners of the draw: `data-ship` is a design file, drawn
+       from scene.py's list by Ships; `data-obj` is one of the game's own ship
+       objects, drawn from its dump by Assets. Same class, so one sweep repaints
+       both, and a caller that knows about neither can ask for a repaint. */
     function paintShipThumbs(root2) {
-      if (!window.Ships) return;
       (root2 || document).querySelectorAll('canvas.shipthumb').forEach((c) => {
-        Ships.thumb(c, c.dataset.ship, 3);
+        if (c.dataset.obj) { if (window.Assets) Assets.shipThumb(c, c.dataset.obj, 3); }
+        else if (window.Ships) Ships.thumb(c, c.dataset.ship, 3);
       });
     }
 
@@ -233,31 +255,58 @@ window.Inspector = (function () {
       const A = window.Assets;
       if (!A || !A.ok) return App.toast('no game art — the server could not find BattleshipsForever.exe', 'bad');
       const names = Object.keys(A.objects).sort();
-      // Two sections, because they are two different things: an OBJECT is
-      // compiled into the game and named directly, a DESIGN is a file the game
-      // loads with importShip. The mission records them under different keys.
-      const ships = (window.Ships && Ships.state.list) || [];
-      const designs = ships.length ? `<div class="head">designs — loaded from a file</div>`
-        + `<div class="grid">${ships.map((s) => `<figure data-ship="${C.esc(s.file)}">
+      // Three sections, because they are three different things. A DESIGN is a
+      // file the game loads with importShip; the other two are objects compiled
+      // into the game, but a SHIP and a PROP are not picked the same way. A
+      // prop is its sprite, so the sprite is the answer to "which one". A ship
+      // is a hull that ignores its sprite — all of them are spr_Core — so a
+      // grid of sprites showed a hundred identical four-pixel squares and the
+      // Hestia could not be told from the Athena. Ships draw as hulls.
+      const designList = (window.Ships && Ships.state.list) || [];
+      const designs = designList.length ? `<div class="head">designs — loaded from a file</div>`
+        + `<div class="grid">${designList.map((s) => `<figure data-ship="${C.esc(s.file)}">
         <canvas class="shipthumb" width="56" height="56" data-ship="${C.esc(s.file)}"></canvas>
         <figcaption>${C.esc(s.name)}${s.stale ? ' <b class="stale">stale</b>' : ''}</figcaption></figure>`).join('')}</div>`
         : '';
+      const shipObjs = names.filter((n) => A.isShip(n));
+      const propObjs = names.filter((n) => !A.isShip(n));
+      // Both sections carry `data-n`: a stock hull is still recorded as
+      // `object:`, so how it is drawn here changes nothing about what picking
+      // it means — and the filter and the click handler need no special case.
+      const ships = shipObjs.length ? `<div class="head">ships — compiled into the game</div>`
+        + `<div class="grid">${shipObjs.map((n) => `<figure class="${n === current ? 'on' : ''}" data-n="${n}">
+        <canvas class="shipthumb" width="56" height="56" data-obj="${C.esc(n)}"></canvas>
+        <figcaption>${n}</figcaption></figure>`).join('')}</div>`
+        : '';
       const el = popup('sprgrid objs', x, y, 340, 380,
-        `<input class="filt" placeholder="filter — station, planet, pirate…">`
+        `<input class="filt" placeholder="filter — hestia, station, planet…">`
+        + `<div class="scroll">`
         + designs
-        + `<div class="head">objects — compiled into the game</div>`
-        + `<div class="grid">${names.map((n) => `<figure class="${n === current ? 'on' : ''}" data-n="${n}">
+        + ships
+        + `<div class="head">props — scenery, markers, everything else</div>`
+        + `<div class="grid">${propObjs.map((n) => `<figure class="${n === current ? 'on' : ''}" data-n="${n}">
         <img src="api/sprite/${encodeURIComponent(A.objects[n])}?f=0" alt="" loading="lazy">
-        <figcaption>${n}</figcaption></figure>`).join('')}</div>`);
+        <figcaption>${n}</figcaption></figure>`).join('')}</div>`
+        + `</div>`);
       el.style.maxHeight = '60vh';
       // The figures and their search keys are built once and never change, so
       // the filter walks an array it already holds rather than re-querying
       // 600-odd nodes out of the DOM on every keystroke.
       const figs = [...el.querySelectorAll('figure')]
         .map((f) => [f, f.dataset.n || f.dataset.ship || '']);
+      // A section whose figures are all filtered out hides its heading too. With
+      // one grid there was nothing to hide; with three, a filter that matches
+      // only props leaves "ships —" ruled off above an empty space, which reads
+      // as a section that failed to load rather than one with no matches.
+      const sections = [...el.querySelectorAll('.head')].map((h) => [h, h.nextElementSibling]);
       el.querySelector('.filt').addEventListener('input', (ev) => {
         const re = new RegExp(ev.target.value.replace(/[^\w\s-]/g, ''), 'i');
         figs.forEach(([f, key]) => { f.hidden = !re.test(key); });
+        sections.forEach(([h, g]) => {
+          const any = !!g && [...g.children].some((f) => !f.hidden);
+          h.hidden = !any;
+          if (g) g.hidden = !any;
+        });
       });
       el.addEventListener('click', (ev) => {
         const f = ev.target.closest('figure');
@@ -301,19 +350,24 @@ window.Inspector = (function () {
           <input data-p="camera.y" data-num value="${b.camera.y}"></div>`],
         ['speed', `<input data-p="camera.speed" data-num value="${b.camera.speed == null ? 60 : b.camera.speed}">`]],
       spawn: (b) => b.spawn.flatMap((sp, k) => {
+        const A = window.Assets;
         const design = !!sp.ship;
         const info = design && window.Ships ? Ships.info(sp.ship) : null;
         const what = (design && info && info.name) || C.spawnLabel(sp);
+        // Ship or prop, said out loud. They spawn through the same list but
+        // they are not the same kind of thing, and the fields below differ by
+        // which one it is — a hull takes team, facing and damage, a prop takes
+        // a sprite and a tint.
+        const kind = design || (A && A.ok && A.isShip(sp.object)) ? 'ship' : 'prop';
         const rows = [
-          [null, `<div class="sub"><span>prop ${k + 1} of ${b.spawn.length} · ${C.esc(what)}</span>
-            <span class="x" data-rmspawn="${k}" title="remove this prop from the beat">remove ✕</span></div>`],
+          [null, `<div class="sub"><span>${kind} ${k + 1} of ${b.spawn.length} · ${C.esc(what)}</span>
+            <span class="x" data-rmspawn="${k}" title="remove this ${kind} from the beat">remove ✕</span></div>`],
           [design ? 'ship' : 'object', `<div class="xy">
             <input data-p="spawn.${k}.${design ? 'ship' : 'object'}" value="${C.esc(design ? sp.ship : sp.object)}">
             <input data-p="spawn.${k}.x" data-num value="${sp.x}" style="max-width:62px">
             <input data-p="spawn.${k}.y" data-num value="${sp.y}" style="max-width:62px"></div>`],
           ['', objPreview(sp.object, k, sp)],
         ];
-        const A = window.Assets;
         // A design is a file the game loads, so it carries the one thing the
         // file cannot say: which side it fights for. An object *is* its side.
         if (design) rows.push(
@@ -332,7 +386,7 @@ window.Inspector = (function () {
         rows.push(['name', `<input data-p="spawn.${k}.name" placeholder="unnamed"
           value="${C.esc(sp.name == null ? '' : sp.name)}"
           title="how the rest of the mission refers to this spawn (global.<mission>_<name>)">`]);
-        if (design || (A && A.ok && A.ship(sp.object))) {
+        if (design || (A && A.ok && A.isShip(sp.object))) {
           rows.push(
             ['hold', sel(`spawn.${k}.hold`, sp.hold ? 'yes' : 'no', ['no', 'yes'])],
             ['facing', `<input data-p="spawn.${k}.facing" data-num placeholder="0°"
@@ -358,7 +412,7 @@ window.Inspector = (function () {
         // The look block is only offered for objects the game draws as a sprite.
         // A designed ship draws its sections and ignores `sprite_index`, so a
         // sprite field on one would be a control that does nothing.
-        if (!design && A && A.ok && !A.ship(sp.object)) rows.push(
+        if (!design && A && A.ok && !A.isShip(sp.object)) rows.push(
           ['sprite', sp.sprite
             ? `${sprField(`spawn.${k}.sprite`, sp.sprite, '^spr_')}
                <button data-clear="spawn.${k}.sprite">use the object's own</button>`
@@ -370,7 +424,7 @@ window.Inspector = (function () {
           ['tint', `<input data-p="spawn.${k}.tint" placeholder="#rrggbb or a colour word" value="${C.esc(sp.tint == null ? '' : sp.tint)}">`],
           ['', '<span class="note">assigned after the object is created, so these replace what it set for itself. Blank = leave it alone.</span>']);
         // One "+ another" at the end of the list, not one per entry.
-        if (k === b.spawn.length - 1) rows.push([null, '<button data-addspawn="1">+ another prop</button>']);
+        if (k === b.spawn.length - 1) rows.push([null, '<button data-addspawn="1">+ another ship or prop</button>']);
         return rows;
       }),
       gate: (b) => {
@@ -483,10 +537,23 @@ window.Inspector = (function () {
       win: () => [['', '<span class="note">missionSucc() — ends the episode</span>']],
       start: () => [['', '<span class="note">runs from alarm[2]; the counter stays 0</span>']],
       wait: () => [],
+      pause: (b) => {
+        const msg = ('say' in b) || ('objective' in b);
+        return [
+          ['steps', `<input data-p="pause" data-num value="${b.pause}">`],
+          ['', `<span class="note">${(b.pause / 30).toFixed(1)}s at room_speed 30. A silent beat`
+            + ' normally hands over with <code>event_user(0)</code>, which re-enters the ladder in the'
+            + ' <i>same frame</i> — so anything this beat started is never seen. This holds it on'
+            + ' alarm[3] instead.</span>'],
+          ...(msg ? [['', '<span class="note stale">this beat shows a message, and a message panel'
+            + ' already holds the beat until the player closes it — the pause does nothing here.'
+            + ' Put it on a silent beat before this one.</span>']] : []),
+        ];
+      },
     };
 
     const ADDABLE = ['note', 'say', 'objective', 'spawn', 'gate', 'camera', 'meteors', 'interference',
-      'controls', 'surge', 'bounds', 'music', 'autosave', 'win'];
+      'controls', 'surge', 'bounds', 'music', 'autosave', 'pause', 'win'];
 
     // Paths whose field may legally be empty, meaning the key is not written.
     const OPTIONAL = /^spawn\.\d+\.(sprite|scale|angle|frame|tint|name)$/;
@@ -800,7 +867,10 @@ window.Inspector = (function () {
 
     App.on('fields', syncFields);
     App.on('select', () => { markTrack(); renderIns(); TL.paint(refs); paintShipThumbs(); });
-    App.on('change', () => TL.paint(refs));
+    // paintShipThumbs too: a hull thumbnail is empty until its dump and its
+    // art land, and both arrive as a `change`. Unscoped on purpose — an open
+    // picker hangs off document.body, not off the rail.
+    App.on('change', () => { TL.paint(refs); paintShipThumbs(); });
     // View first: a different mission is a different room, so the zoom it was
     // left at means nothing — and resetting it after the re-render would draw
     // the new room at the old framing once before correcting itself.

@@ -33,6 +33,20 @@ scenery:
 # space. The gas clouds are scattered over these same cells, but a cloud is
 # many cells wide — gas laps over clear space, and only the mask bites.
 # Paint it in tools/editor.
+#
+# THE YARD KEEPS A 250-UNIT MARGIN, and 250 is not a taste number: spr_Nebula
+# is 400x400 drawn on its centre, so a puff seeded in a filled cell reaches 200
+# units out of it. 200 plus one cell of slack is the distance at which no gas
+# can lap onto yard art — which is the only way the storm reaches something the
+# mask itself does not cover.
+#
+# Rotating the yard is what made this bite. Lying along x it sat in the clear
+# lane between the top and bottom banks; standing along y it reaches rows 7-29,
+# and the bank above it came within 189 units of the station — 11 inside the gas
+# reach. 13 cells were cleared to restore the margin (rows 2-3 above the yard,
+# one at row 34 below it), 1.2% of the field, and no beacon's own margin was
+# touched. Move the yard again and re-measure: the margin is a property of
+# where the hulls are, not of the mask.
 storm:
   cell: 50
   dmg: 0.3
@@ -42,8 +56,8 @@ storm:
   mask:
     - "...........................................#..@@@@@@@@@@@@@@@@@##......#@@@@@......############@@@@@@..........."
     - "........#.........#....................###.###@@@@@@@@@@@@@@@@@###.....##@@@........#############@@@@@######...."
-    - "##.################...................#####..##@@@@@@@@@@@@@@@####.....#####.........###.#######.@@@@@#######..."
-    - "#....#@@@.....##.........####........@#####..########################...###...............#####..@@@@@########.."
+    - "##.################...................#####..##@@@@@@@@@@@@@@@####.....#####.................###.@@@@@#######..."
+    - "#....#@@@.....##.........####........@#####..########################...###......................@@@@@########.."
     - "#....#@@@@@@.#.....@@@###...##.......@#####...###############.########............................@@@#########.."
     - "#.....@@@@@@@......@@@#......#####...@@###.......................#####............................#######@@@###."
     - "#...####.@@@@......@@@...........................................#####............................######@@@@@##."
@@ -74,7 +88,7 @@ storm:
     - ".##......................#####......................................................................###@@@@@####"
     - ".##......................#...##............#.......................................................###@@@@@@####"
     - "..#......................#####@@@.................................................................####@@@@@@@##."
-    - "..#@@@.....................##.@@@..............##############.@@@..........@@@...................#####@@@@@@@##."
+    - "..#@@@.....................##.@@@..............##############.@@@..........@@....................#####@@@@@@@##."
     - "..#@@@........................@@@..............@@@@@@@@@@@@@@@@@@@........@@@@@.........@@@####..####@@@@@@@@##."
     - "..@@@@.........................##.............#@@@@@@@@@@@@@@@@@@@@.......@@@@@........@@@@@####.###@@@@@@@@##.."
     - "..@@@@#........##...#...........#.......#######@@@@@@@@@@@@@@@@@@@@.......@@@@@........@@@@@########@@@@@####..."
@@ -100,9 +114,11 @@ meteors:
 # How far the camera may look. Bolthole sits behind this line for the whole run
 # and is pre-spawned behind it, so the arrival is a camera move rather than six
 # hulls appearing out of nothing. 3600 is 170 past the gate batteries -- their
-# guns are fully visible with a sliver of space beyond -- and 90 short of the
-# leftmost berth's art. The minimap is blacked out past the same line, which is
-# also what keeps a camera that stops reading as a door rather than a bug.
+# guns are fully visible with a sliver of space beyond -- and 82 short of the
+# leftmost art the yard owns, which since the rotation is the planet at 3682
+# rather than a berth at 3709. The berths themselves now begin at 3964.
+# The minimap is blacked out past the same line, which is also what keeps a
+# camera that stops reading as a door rather than a bug.
 bounds: {x2: 3600}
 
 # The storm wall that closes the Ratline behind you, lit at the surge beat.
@@ -166,13 +182,23 @@ beats:
       - "guns saying it are already on screen."
       - ""
       - "They sit at x 3430, between beacon five (3120) and the yard's left"
-      - "edge (3709). The y pair is not eyeballed: the line from beacon five"
-      - "to the gate_at crosses x 3430 at y 1039, so 800 and 1290 centre the"
-      - "gap on the course the player actually flies, to within 6 units. Each"
+      - "edge (3964). The y pair is not eyeballed: the line from beacon five"
+      - "to the gate_at crosses x 3430 at y 1066, so 800 and 1290 centre the"
+      - "gap on the course the player actually flies, to within 21 units. Each"
       - "hull is 180 x 168, leaving 322 clear to thread. Facing is the whole"
       - "of what makes them a *pair*: the design points its guns +x, and 205"
       - "and 155 turn them down-lane and inward, so their arcs cross over the"
       - "gap rather than pointing the same way twice."
+      - ""
+      - "THE BATTERIES DID NOT TURN WITH THE YARD, and that is deliberate."
+      - "They are placed on the *approach*, not on the station: the pair only"
+      - "reads as a gate because the course from beacon five threads between"
+      - "them. Rotating them rigidly about the yard centre puts both at y 1752,"
+      - "side by side below the yard, where the player never passes between"
+      - "them and there is no gate left. What the rotation did move is the"
+      - "gate_at they aim at, and that shifted the crossing from y 1039 to"
+      - "1066 -- 21 off the gap centre in a gap 322 wide, so the pair itself"
+      - "still needs no adjustment."
     start: true
     controls: off
     music: stop
@@ -187,12 +213,12 @@ beats:
       - {ship: "mods/ships/beacon_ratline.shp", team: ally, hold: true, facing: 23, x: 3120, y: 1120}
       - {ship: "mods/ships/station_gatebattery.shp", team: ally, hold: true, facing: 205, x: 3430, y: 800, name: gateN}
       - {ship: "mods/ships/station_gatebattery.shp", team: ally, hold: true, facing: 155, x: 3430, y: 1290, name: gateS}
-      - {ship: "mods/ships/station_bolthole.shp", team: ally, hold: true, facing: 90, x: 4269, y: 1102, name: station}
-      - {object: ter_Planet, x: 3955, y: 461}
-      - {object: Hecate, hold: true, facing: 270, x: 3790, y: 707, name: berth1}
-      - {object: Cronus, hold: true, facing: 270, x: 3989, y: 775, name: berth2}
-      - {object: Athena, hold: true, facing: 270, x: 4560, y: 707, name: berth3}
-      - {object: Hestia, hold: true, facing: 270, x: 4737, y: 800, name: berth4}
+      - {ship: "mods/ships/station_bolthole.shp", team: ally, hold: true, facing: 180, x: 4450, y: 914, name: station}
+      - {object: ter_Planet, x: 3810, y: 1228}
+      - {object: Hecate, hold: true, facing: 0, x: 4056, y: 1392, name: berth1}
+      - {object: Cronus, hold: true, facing: 0, x: 4124, y: 1194, name: berth2}
+      - {object: Athena, hold: true, facing: 0, x: 4056, y: 622, name: berth3}
+      - {object: Hestia, hold: true, facing: 0, x: 4148, y: 446, name: berth4}
     say:
       who: "[Hint]"
       sprite: spr_MesHint
@@ -293,8 +319,13 @@ beats:
 
   - note:
       - "The reveal. The camera is aimed at the yard's measured centre, not at"
-      - "the approach: with art, station and berths span world 3709-4822 x"
-      - "615-1219, so 1113 x 604, centred on (4265.5, 917)."
+      - "the approach. The yard was rotated 90 degrees counter-clockwise about"
+      - "that centre, so the centre itself is unchanged -- (4265.5, 917) -- but"
+      - "the envelope turned with it: station and berths spanned 3709-4822 x"
+      - "615-1219 (1113 x 604) and now span 3964-4568 x 360-1474 (604 x 1113)."
+      - "A rigid rotation is why every clearance below still holds without"
+      - "being re-derived: the arms, the bows and the gap they moor in all"
+      - "turned together."
       - ""
       - "centreCamera already frames the part of the view the player can see."
       - "Measured at speed 0, view_xview comes out at exactly"
@@ -309,21 +340,31 @@ beats:
       - "almost pure x. Change the approach and this term changes with it:"
       - "re-read view_xview rather than assuming it holds."
       - ""
-      - "What does NOT survive a change of aspect is the fit. mods/aspect.gml"
-      - "sets view_wview[0] = round(view_hview[0] * display_w / display_h) with"
-      - "the height pinned at 768, so the clear width is 768*aspect - 160: 1205"
-      - "at 16:9, 1069 at 16:10, 864 at 4:3. The yard needs 1113, so at 16:10 and"
-      - "narrower the outer berths lose their tips wherever this points. 604 tall"
-      - "against 768 always fits."
+      - "THE FIT IS NOW A ZOOM QUESTION, NOT AN ASPECT ONE, and that is the"
+      - "whole of what the rotation cost. mods/aspect.gml sets"
+      - "view_wview[0] = round(view_hview[0] * display_w / display_h), and"
+      - "ctr_GUI scales both axes by l_zoom off 1024 x 768 -- so height is"
+      - "768*zoom at every aspect and width is 768*zoom*aspect - 160*zoom."
+      - ""
+      - "Turned on its side the yard needs 1113 TALL, and height is the axis"
+      - "aspect cannot help with. At the old zoom 1.3 the view is 998 tall and"
+      - "the outer berths overrun it by 57 at each end. 1.45 is the exact fit"
+      - "and 1.55 is the one used: 1190 tall, 39 clear above and below. Width"
+      - "stops being the constraint entirely -- 604 needed against 864*zoom"
+      - "even at 4:3, which is 1339 at this zoom."
+      - ""
+      - "l_zoomtar is assigned directly and the engine clamps it nowhere, so a"
+      - "zoom past the wheel's own range is reachable; the room does not clamp"
+      - "the view either, at any aspect out to 21:9."
       - ""
       - "Aimed at the approach (3020) the station's core sat under the HUD column"
       - "and two of the four berthed hulls were off-screen entirely."
       - ""
-      - "The berths: the station is drawn at facing 90, which maps its design"
-      - "(x, y) to world (y, -x) - the arms sit at design y -468/-291/+291/+468"
-      - "and reach design x 252, so their tips are world y 850 at x 3669 +/- 468"
-      - "and +/- 291. Each hull is nose-in at facing 270 and every y below is set"
-      - "so all four bows land on world y 878, i.e. 28 *into* the arm tips. The"
+      - "The berths: the station is drawn at facing 180, which maps its design"
+      - "(x, y) to world (-x, -y) - the arms sit at design y -468/-291/+291/+468"
+      - "and reach design x 252, so their tips are world x 4198 at y 914 +/- 468"
+      - "and +/- 291. Each hull is nose-in at facing 0 and every x below is set"
+      - "so all four bows land on world x 4226, i.e. 28 *into* the arm tips. The"
       - "overlap is the point: at a clean tangent they read as four ships parked"
       - "near a station, and only contact reads as moored. Bow reach is measured"
       - "in pixels, not off the section origin (Hecate and Athena 171, Cronus"
@@ -332,11 +373,17 @@ beats:
       - "nudged 11 off the arm centres: Cronus is 210 across the beam and Hecate"
       - "162, needing 186 of separation where the arms give 177. That leaves 13"
       - "clear between them, and each hull still straddles its own arm."
+      - ""
+      - "The whole of that paragraph is the pre-rotation one with the axes"
+      - "swapped, because that is all the rotation did to it. What was a"
+      - "horizontal spine with berths hanging below is now a vertical one with"
+      - "berths hanging to port; the separations, the 28 of overlap and the 11"
+      - "of nudge are the same numbers, measured along the other axis."
     music: theme
     eerie: off
     interference: {ships: off, clouds: on}
     bounds: off
-    camera: {x: 4297, y: 917, speed: 90, zoom: 1.3}
+    camera: {x: 4297, y: 917, speed: 90, zoom: 1.55}
     say:
       who: Fleet HQ
       sprite: spr_MesHQ
@@ -356,13 +403,53 @@ beats:
       who: Fleet Admiral Hong
       sprite: spr_MesHong
       text: "It's been a long time since Sol, old friend. Bring your ship alongside the naval yard. There's something I want you to see."
-    gate_at: {x: 4247, y: 825}
+    gate_at: {x: 4174, y: 936}
     wait: gate
 
-  - spawn:
-      - {object: Hestia, x: 4244, y: 701, name: hestiax}
+  - note:
+      - "The reveal is the cloak's own uncloak, not a spawn. mods/cloak.gml"
+      - "runs for any hull that mounts an UmbraCloak, and the Erebus mounts one"
+      - "(wea 8) -- so she is already the module's business the frame she"
+      - "exists, and the line Hong speaks over her is literally true of the"
+      - "ship on screen rather than a claim about an offscreen past."
+      - ""
+      - "Three writes, and each one is load-bearing:"
+      - ""
+      - "  l_cloak_lock = 1  the module stops choosing for her. Without it its"
+      - "                    own rule (budget over the re-engage threshold ->"
+      - "                    want = 1) re-cloaks her seconds after the reveal,"
+      - "                    because she spawns with a full 100 budget."
+      - "  l_cloak_want = 0  the destination: solid."
+      - "  l_cloak_snap = 0  where the fade STARTS. The lazy init makes every"
+      - "                    hull solid, and the transition only ever eases from"
+      - "                    where the ship already is -- so without this she"
+      - "                    pops in at full brightness and then fades OUT,"
+      - "                    which is the animation backwards."
+      - ""
+      - "That is 60 steps at room_speed 30, so two seconds of fade-in, and the"
+      - "beat holds for it: `pause: 75` before Hong speaks. THE SPLIT IS THE"
+      - "POINT. A silent beat hands over with event_user(0), which re-enters the"
+      - "ladder in the SAME FRAME -- so with the line on this beat the panel"
+      - "opened on the tick she was still fully cloaked and the whole reveal"
+      - "played behind it. 60 steps for the fade and 15 more to let her sit"
+      - "there solid, then the next beat opens his panel."
+      - ""
+      - "The lock is never released. She is revealed and stays revealed; the"
+      - "mission ends four beats later. Releasing it would hand her back to the"
+      - "module, which would cloak her again on the spot."
+      - ""
+      - "exec: runs AFTER spawn: within a beat (build.py beat_stmts), so the"
+      - "hull exists by the time these three lines address it. It is also"
+      - "replayed on a seek, which is right: it sets up the world and nothing"
+      - "else, so a checkpoint landing here re-plays the uncloak."
+    spawn:
+      - {ship: "mods/ships/hestia_x_erebus.shp", team: ally, facing: 90, x: 3968, y: 942, name: hestiax}
+    exec:
+      - "with (global.a2m1_hestiax) { l_cloak_lock = 1; l_cloak_want = 0; l_cloak_snap = 0; }"
     ping: hestiax
-    say:
+    pause: 75
+
+  - say:
       who: Fleet Admiral Hong
       sprite: spr_MesHong
       text: "She's been alongside you since the fifth beacon, Captain. Not one of your sensors saw her. We call her the Hestia X."

@@ -98,6 +98,82 @@ re-checking (see `to_main_menu` in scripts/drive-lib.sh).
 * World→screen mapping at 4K: **×2.8125** (game view 1365×768 → 3840×2160),
   then add the +1080 monitor offset to X.
 
+## Where is the game actually drawing? — 2026-08-22
+
+The window is not the picture. `mods/resolution.gml` calls
+`window_set_region_scale(-1, 0)` — fit-to-window keeping aspect — so the render
+region is scaled up until one axis fills the window and the other is
+letterboxed. Measured on a 3840×2160 wine virtual desktop with
+`region=1600x1120`: the picture is **3086×2160 at +377,0**, and `xwininfo`
+reports the game window as 3840×2160+0+0, which is true and useless.
+
+Three numbers, and only one of them is the grab rect:
+
+| what | where it comes from | value in that run |
+|---|---|---|
+| window | `xwininfo`, and `win=` in `mods/edit/state` | 3840×2160 at +0,0 |
+| region | `window_get_region_width()`, `region=` in `state` | 1600×1120 |
+| **picture** | measured from a frame | **3086×2160 at +377,0** |
+
+Derive it if you like — `h_pic = win_h`, `w_pic = win_h × region_w / region_h`,
+centred — but **measure it anyway**, because the derivation assumes the fit axis
+and the centring, and a frame settles both for the cost of one grab. The
+bounding box of everything that is not black is the rect; `measure_rect` in
+`_local/captures/hestia-x-reveal-drive.sh` is the copy to lift. Round down to
+even dimensions or libx264 refuses the encode.
+
+**How this fails is the point.** Grabbing `region` at `+0,0` — the obvious
+wrong guess, since both numbers are real and sit next to each other in `state`
+— produces a corner crop of an upscaled frame. It is in focus, correctly
+exposed, full of game, and framed almost sensibly, so nothing in the file says
+it is wrong. It cost a complete take of the EP9 Hestia X reveal: the ship that
+decloaks landed just past the crop line, a *different* Hestia sat inside it, and
+the take was handed over as showing the reveal. The cheap check is the HUD —
+the green column and the minimap live at the region's right edge, so **a frame
+with no HUD column is a cropped frame**, whatever else it looks like.
+
+World→screen, once the rect is right, comes from the dump header
+(`viewx viewy vieww viewh`) and the region:
+
+    logical_x = (world_x - viewx) × region_w / vieww
+    picture_x = logical_x × pic_w / region_w        # + the rect offset for the root
+
+## Driving a mission headless without it ending under you — 2026-08-22
+
+A seek does not leave the mission in a state that survives being left alone.
+Two separate things end the run early, and both look like the game hanging: the
+process is alive, `mods/probe.txt` stops ticking, commands go unacked, and there
+is no error anywhere.
+
+* **The player dies.** `seek` restores world state and drops the player wherever
+  the beat left her, with nobody flying. In EP9 that is inside the meteor storm.
+  MISSION FAILED comes up, the room stops stepping, and the take is of a mission
+  that ended seconds in. **`edit 1` before the seek** — the editor's rules
+  disable storm damage and `missionFail`. Cheap tell: `ships=` in
+  `mods/edit/state` drops by one.
+* **The ladder walks on without you.** `GUI_Messager` destroys itself on a timer
+  (`l_counter > string_length(l_text) × GUI_MessageReadTimeMul + GUI_MessageReadTime`,
+  counted in the Draw event), *not* on input — so a headless run with nobody
+  pressing anything still advances through every remaining beat and reaches the
+  end screen. Park the counter on a value with no branch and clear the pause
+  alarm:
+
+      with (global.a2m1_ctr) { l_messagecount = 900; alarm[3] = -1; }
+      with (GUI_Messager) instance_destroy();
+
+  Then fire each beat by hand and the scene holds still for as long as needed.
+
+Check the whole root, not the game rect, when a run looks stuck — the earlier
+diagnosis here was wrong twice for the same reason. A cropped screenshot showed
+`MISSIO…` and was read as MISSION ACCOMPLISHED; the full root said **MISSION
+FAILED — YOUR SHIP WAS DESTROYED**, which is a different bug with a different
+fix.
+
+**`global.ed_res` cannot carry a value back.** The editor overwrites it with its
+own ack (`handed to execute_string`) after `execute_string` returns, so a probe
+that sets it reads back the ack every time. Have the probe write its own file
+under `mods/edit/` and read that.
+
 ## Launch recipe
 
 1. Copy the game dir to a scratch location (never capture in the canonical dir).
@@ -207,6 +283,160 @@ Found while verifying a new mod headlessly rather than capturing.
   `start` but not `ok`" are the two diagnoses you otherwise cannot tell apart.
   `battle.gml` and `cloak.gml` both do this.
 
+## The cloak rig is a ready-made instrument — 2026-08-22
+
+`mods/cloak.gml`'s regression rig answers "did I break the cloak" in about
+forty seconds, and it is the fastest way to test any change to that file *or* to
+the mission-facing variables it exposes. Stage, then drop three files in
+`mods/`: `cloak_demo.on`, `battle.on`, and a one-ship `battle.cfg` —
+
+    2048 / 2048 / 60 / 12345 / 1 / 1 / Hecate / 1 / 1024 / 1024 / 0 / 0
+
+(one value per line: room w, h, menu step to enter on, seed, nwaves, then the
+wave's step, object, count, cx, cy, spread, period). Any stock hull works — the
+rig creates the UmbraCloak mount itself and points `l_owner` at the first
+`ctr_Ship` on the field, so nothing custom has to be in the room. It calls
+`game_end()` at rtick 310, so the run ends itself; no driver and no capture.
+
+What each output proves, in the order worth reading them:
+
+* `mods/cloak.log` — `ok …` means the file compiled all the way through. `start`
+  alone means it died partway, and no file means it never ran. This is the whole
+  reason the breadcrumb exists; read it first.
+* `mods/cloak_trace.txt` — **the real instrument**: one line per tick from 145 to
+  300 with `now`, `hidden`, `want`, `bud`, `slot`, `parts`, `depth`. A healthy
+  transition steps `now` by exactly 1/60 per tick, flips `hidden` at the start,
+  holds `parts` non-zero throughout, and returns `slot` to -1 with `depth` back
+  to its own the tick it settles. `parts=0` during a transition is the signature
+  of a part scan that was skipped — the scan only runs while `now >= 1`.
+* `mods/cloak.txt` — `hull_append=1` is the one that matters most (the appended
+  `ctr_Ship` Create really ran), plus `binds`/`fails` for the shader.
+* `game_errors.log` — count *blocks* (`grep -c 'ERROR in'`). ~40 of them are BSF's
+  own BASS defines failing on a box with no sound device, and one more
+  `ctr_PartDrawer` block on **Game End** is the rig's own `game_end()` unwinding.
+  Neither is a finding.
+
+**The rig writes 36 full-screen PNGs.** At the 4K virtual desktop that is 33 MB
+each — **1.3 GB** in the staged copy. Copy out `cloak_trace.txt` and delete the
+scratch dir, or stage at a smaller `res.cfg` if the frames are not the point.
+
+`cloak.txt` and the last frames land a few seconds after the trace stops; a read
+timed off the trace alone reports them absent when they are merely late.
+
+**The rig proves the module; it does not prove the mission.** For a mission-side
+reveal, sample the hull directly instead — pin the ladder (see "Driving a
+mission headless…"), fire the spawn, and append `l_cloak_now` to a file every
+few hundred ms. The EP9 Hestia X reads
+`now=0.08 → 0.30 → 0.50 → 0.70 → 0.92` with `want=0 lock=1 snap=-1` throughout,
+which is the whole contract in one line of output: `snap` spent, `lock` held by
+the mission, `want=0` meaning *cloak off* — so the target is **solid**, not
+invisible. That last one is worth saying out loud, because `l_cloak_want = 0`
+reads like "wants to be invisible" and is the opposite:
+`eng = l_cloak_want; tgt = 1; if (eng == 1) tgt = 0;`.
+
+Five samples over two seconds cost nothing and settle "is the reveal broken" on
+their own — **before** any question about whether the *capture* showed it. Do
+them in that order; the reverse wasted a session here.
+
+## Two more staging traps — 2026-08-22
+
+Both cost a run each while verifying a compiler change headlessly.
+
+* **Size the Xvfb screen to the prefix's virtual desktop, or the game does not
+  start at all.** The note above says to match it; the failure when you do not
+  is worth knowing by sight, because nothing in the game's own logs mentions it:
+
+      X Error of failed request:  BadWindow (invalid Window parameter)
+        Major opcode of failed request:  1 (X_CreateWindow)
+
+  wine exits, no module ever loads, and every breadcrumb file is simply absent —
+  which reads exactly like "my mod failed to compile". A 1280x1024 screen under
+  a 3840x2160 `Default` desktop is enough to trigger it.
+* **`cp -a` of the game dir brings the canonical install's `game_errors.log`
+  across**, timestamps and all. Counting blocks in it then measures whatever the
+  last real session did — a 4.6 MB log from another day. `rm` it as part of
+  staging, next to clearing `mods/`.
+
+## Timing anything against a GM7 alarm
+
+GM7's per-step order is **Begin Step -> Alarm -> Step**, so a tick counter
+incremented in Step reads one *low* when an alarm event samples it. Measuring
+`alarm[n] = 75` that way reported a 74-step delay and looked like an off-by-one
+in the code under test; moving the counter to Begin Step reported 75, which is
+the truth. Put the counter in Begin Step before concluding anything about alarm
+latency.
+
+## Can this display be captured at all? — 2026-08-22
+
+**Check before every take, not after.** A locked session and a headless one both
+leave the game running and stepping normally, so every signal you would
+instinctively trust says the take is fine: the process is alive, `mods/edit/state`
+ticks, `wmctrl -a 'Wine desktop'` reports success, ffmpeg exits 0. The footage is
+blank. One take was lost to this and diagnosed only from the encoder stats.
+
+**The tell is in the encode, and it is unmistakable:**
+
+    frame P:597  Avg QP: 5.01  size: 16
+    mb P  ... skip:100.0%
+
+100% skipped P-frames means nothing moved for the whole take. A 20-second 4K
+capture that lands at **88 KB** is the same fact in one number. Do not go looking
+for a mod bug; go looking for a display.
+
+**The three states, and how to tell them apart:**
+
+    loginctl show-session $(loginctl list-sessions --no-legend | awk 'NR==1{print $1}') \
+        -p Type -p Active -p LockedHint --value
+
+* `LockedHint=yes` — **locked**. The game runs behind the lock screen and
+  x11grab reads the *whole root* as blank, not just the game window. Nothing you
+  can do from a shell fixes this and nothing should: unlocking is the human's.
+  `xset dpms force on` does not help, and `xset q` will cheerfully report
+  `Monitor is On` throughout, so it is not the check you want.
+* No session on that display — **headless**. Fine, and preferable; see below.
+* `Active=yes`, `LockedHint=no` — capturable.
+
+**One-line pre-flight**, cheaper than any of the above and it catches all cases,
+because it asks the only question that matters:
+
+    ffmpeg -f x11grab -video_size <root> -i $DISPLAY -frames:v 1 -y /tmp/probe.png
+    # a PNG under ~5 KB is a blank root: do not start the take
+
+**What to do instead: take it headlessly.** Xvfb does not care whether anyone is
+logged in, cannot be locked, and does not touch the human's desktop — so it is
+the *default* for an unattended take, not the fallback. `Xvfb :99 -screen 0
+3840x2160x24`, sized to the prefix's virtual desktop (the "Headless
+boot/splash capture" section below has the rest, and the BadWindow signature if
+you get the size wrong). Grab `:99.0` with **no offset**: the desktop maps 1:1,
+which also sidesteps the multi-monitor offset arithmetic entirely.
+
+**If you must use the real display**, derive the offset, never reuse one. Hard
+rule 4 says trust xrandr, and this is why: the reference setup has the 4K output
+at `+1080,0`, and the desk it was re-measured on had it at **`+1080,1024`**.
+Grabbing the remembered constant captured a different monitor and returned a
+screenshot of an unrelated window that looked plausible enough to reason from.
+
+    GEO=$(xrandr --listmonitors | awk '/DP-2/ {print $3}')   # 3840/941x2160/529+1080+1024
+    SIZE=$(echo "$GEO" | sed -E 's#([0-9]+)/[0-9]+x([0-9]+)/[0-9]+.*#\1x\2#')
+    OFF=$( echo "$GEO" | sed -E 's#.*[0-9]+\+([0-9]+)\+([0-9]+)$#\1,\2#')
+
+## Serving a capture to look at it — 2026-08-22
+
+`scripts/serve_range.py PORT DIR [HOST]`. Range support is the point: Chrome
+needs `206 Partial Content` or the video will not scrub, and a plain
+`python3 -m http.server` gives it `200` and a seek bar that does nothing.
+
+HOST defaults to loopback; `tailscale` resolves this node's tailnet address and
+binds **that one address**, so the LAN gets nothing. Verify rather than assume —
+`ss -ltn | grep <port>` must show the tailnet address and not `0.0.0.0`:
+
+    python3 scripts/serve_range.py 8736 _local/captures tailscale
+    curl -o /dev/null -D - -H 'Range: bytes=0-1023' http://<tailnet-ip>:8736/x.mp4
+
+There is no authentication of any kind, and `_local/` is the folder that is
+private by design, so bind the narrowest address that reaches the device you
+want to watch on. Pick a port and check it first: 8735 was already held.
+
 ## Archive convention
 
 Every finished video lands in `_local/captures/` with its driver script beside
@@ -227,7 +457,7 @@ and no real display are needed.
   `ffmpeg -f x11grab -video_size 1280x720 -i :99.0+1280,720` region grab
   catches it with room to spare at a tenth of the pixels.
 * Launch directly with the usual `game.py` env plus `DISPLAY=:99`, cwd = the
-  staged dir (hard rule 6 — `wine explorer /desktop=…` is how a whole run of
+  staged dir (hard rule 8 — `wine explorer /desktop=…` is how a whole run of
   splash measurements came back void).
 * 10 fps PNG frames are plenty; the splash lives ~8 s. Verdict signatures: a
   healthy boot shows the splash within ~1 s and the game window ~8 s later; a

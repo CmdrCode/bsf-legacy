@@ -33,6 +33,7 @@ window.Assets = (function () {
 
   const A = {
     ok: false, sprites: {}, objects: {}, source: null,
+    hulls: new Set(),                // object names that are ships, not props
     onload: null,                    // set by the app: called when art arrives
     _img: {}, _tint: new Map(), _ship: {},
   };
@@ -41,9 +42,20 @@ window.Assets = (function () {
     return fetch('api/assets').then((r) => r.json()).then((d) => {
       if (!d.ok) throw new Error(d.why || 'no assets');
       A.ok = true; A.sprites = d.sprites; A.objects = d.objects; A.source = d.source;
+      A.hulls = new Set(d.hulls || []);
       return A;
     }).catch((e) => { A.ok = false; A.why = e.message; return A; });
   };
+
+  /* Ship or prop, answered now.
+   *
+   * The distinction the UI turns on, and the one the sprite manifest cannot
+   * make: a ship draws its sections, so its `sprite_index` is spr_Core and
+   * every hull in the game shares it. `A.ship()` knows the answer too, but only
+   * after a round trip, and a picker listing 600 objects has to decide how to
+   * draw each of them before it has fetched any. So the server sends the whole
+   * set with the manifest and this is a lookup. */
+  A.isShip = (obj) => A.hulls.has(obj);
 
   /* Lazily fetched frame. Returns null until it has arrived, then repaints. */
   A.img = function (name, frame) {
@@ -186,6 +198,60 @@ window.Assets = (function () {
     });
     ctx.restore();
     return drew > 0;
+  };
+
+  /* Extent of a hull, in its own units.
+
+     A design file has a bbox because scene.py computes one; a stock hull dump
+     does not, so it is measured here — each section's sprite rect carried
+     through the same translate/rotate/scale drawShip applies to it, which is
+     why the order below is scale, then rotate, then translate. Cached on the
+     hull object, since that is what the fetch already hands back. */
+  function hullBox(hull) {
+    if (hull._box !== undefined) return hull._box;
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    (hull.sections || []).forEach((sec) => {
+      const sp = hull.sprites[sec.sprite];
+      if (!sp) return;
+      const a = -(sec.angle || 0) * Math.PI / 180;
+      const co = Math.cos(a), si = Math.sin(a);
+      const kx = sec.xscale == null ? 1 : sec.xscale;
+      const ky = sec.yscale == null ? 1 : sec.yscale;
+      [[-sp.ox, -sp.oy], [sp.w - sp.ox, -sp.oy],
+        [-sp.ox, sp.h - sp.oy], [sp.w - sp.ox, sp.h - sp.oy]].forEach((c) => {
+        const px = c[0] * kx, py = c[1] * ky;
+        const x = sec.x + px * co - py * si, y = sec.y + px * si + py * co;
+        if (x < x0) x0 = x;
+        if (x > x1) x1 = x;
+        if (y < y0) y0 = y;
+        if (y > y1) y1 = y;
+      });
+    });
+    hull._box = x1 > x0 ? [x0, y0, x1, y1] : null;
+    return hull._box;
+  }
+
+  /* A hull thumbnail for a ship *object* — the counterpart of Ships.thumb, which
+     does the same job for a design file. Returns false until the dump and its
+     art have arrived; every caller repaints on A.onload, and a repaint that
+     happens twice is free. */
+  A.shipThumb = function (canvas, obj, pad, team) {
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const hull = A.ship(obj);
+    if (!hull) return false;
+    const box = hullBox(hull);
+    if (!box) return false;
+    const w = Math.max(1, box[2] - box[0]), h = Math.max(1, box[3] - box[1]);
+    const m = pad == null ? 4 : pad;
+    const k = Math.min((canvas.width - m * 2) / w, (canvas.height - m * 2) / h);
+    ctx.save();
+    ctx.translate(canvas.width / 2 - ((box[0] + box[2]) / 2) * k,
+      canvas.height / 2 - ((box[1] + box[3]) / 2) * k);
+    ctx.scale(k, k);
+    const drew = A.drawShip(ctx, hull, 0, 0, { team: team || 0 });
+    ctx.restore();
+    return drew;
   };
 
   A.TEAMS = TEAMS;

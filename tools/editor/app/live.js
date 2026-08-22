@@ -89,12 +89,19 @@ window.Live = (function () {
     return -1;
   };
 
-  L.viewNote = function () {
+  L.viewNote = function (zoom) {
     // The room's authored view is 1024x768, but the resolution mod rewrites the
     // ports at run time — a live dump came back 3140x1766 — so the frame drawn
     // over the map is the game's real view whenever there is one to read.
     const h = L.dump && L.dump.head;
-    if (!h || !h.vieww) return ' · dashed box = the 1024×768 view';
+    if (!h || !h.vieww) {
+      // With no game to read, the box is the authored view scaled by whatever
+      // zoom the beat left in force — say which, because "1024×768" over a
+      // zoomed beat is a caption that disagrees with the box beside it.
+      const z = zoom == null ? 1 : zoom;
+      return z === 1 ? ' · dashed box = the 1024×768 view'
+        : ` · dashed box = the ${Math.round(1024 * z)}×${Math.round(768 * z)} view at zoom ${z}`;
+    }
     return ` · dashed box = the live view ${Math.round(h.vieww)}×${Math.round(h.viewh)}`;
   };
 

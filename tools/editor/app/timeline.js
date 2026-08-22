@@ -296,7 +296,7 @@ body.tl-dragging *, body.tl-dragging [contenteditable] { user-select:none !impor
     refs.hud.innerHTML =
       `<div><b>${C.esc(m.title)}</b> · EP${m.episode} · ${N} beats</div>` +
       `<div>beat ${i} · rung ${numbered[i].n} · ${C.actionsOf(b, m).map((a) => a.icon + a.label).join(' ') || 'no actions'}</div>` +
-      `<div>camera (${st.camera.x}, ${st.camera.y})${Live.viewNote()}</div>` +
+      `<div>camera (${st.camera.x}, ${st.camera.y})${Live.viewNote(st.camera.zoom)}</div>` +
       // Only while zoomed, and it carries the way back out: the wheel is
       // discoverable, "how do I see the whole room again" is not.
       (window.View && View.zoomed() ? `<div>zoom <b>${View.label()}</b> · 0 fits</div>` : '');

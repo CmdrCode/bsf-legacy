@@ -743,7 +743,8 @@ if (global.{g}_imp >= 0) {{
     #: Stored as a list of lines, like the storm mask, so it diffs by the line.
     BEAT_KEYS = {"note", "start", "say", "objective", "gate", "gate_at", "wait",
                  "autosave", "music", "eerie", "meteors", "camera", "spawn",
-                 "ping", "win", "exec", "interference", "bounds", "surge", "controls"}
+                 "ping", "win", "exec", "interference", "bounds", "surge", "controls",
+                 "pause"}
 
     # Verbs whose effect is persistent world state. Only these are replayed when
     # the editor fast-forwards (user event 1) — the rest are *events*, and a seek
@@ -780,6 +781,20 @@ if (global.{g}_imp >= 0) {{
         for k in b:
             if k not in self.BEAT_KEYS:
                 self.lint.err(f"{where}: unknown beat key '{k}'")
+        # `pause:` is not an action — it changes how this beat HANDS OVER, so it
+        # is read by the ladder rather than compiled to a statement. Validated
+        # here because this is where every other beat key is.
+        if "pause" in b:
+            v = b["pause"]
+            if not isinstance(v, int) or isinstance(v, bool) or v < 1:
+                self.lint.err(f"{where}: pause must be a whole number of steps, 1 or more")
+            if ("say" in b) or ("objective" in b):
+                self.lint.err(f"{where}: pause: on a beat that shows a message does "
+                              f"nothing — the panel is already what holds the beat. "
+                              f"Put the pause on a silent beat before this one.")
+            if b.get("win"):
+                self.lint.err(f"{where}: pause: on a win beat does nothing — the "
+                              f"mission ends rather than handing over")
         if b.get("music") == "stop":
             out.append(("music", "stopMusic()"))
         elif b.get("music") == "theme":
@@ -1908,7 +1923,21 @@ alarm[5] = {interval};
             stmts += [s for _, s in acts[n]]
             has_msg = ("say" in b) or ("objective" in b)
             if not has_msg and not b.get("win"):
-                stmts.append(f"l_messagecount = {n + 1}; event_user(0)")
+                # A silent beat hands straight over — `event_user(0)` re-enters
+                # this same ladder in the same frame, so a run of silent beats
+                # all resolve before anything is drawn.
+                #
+                # `pause:` is the exception, and it exists because that instant
+                # hand-over is exactly wrong when the beat started something the
+                # player is supposed to WATCH. Nothing visual survives a frame
+                # that also runs the next rung, so a two-second decloak and the
+                # line spoken over it would land on the same tick. The rung
+                # still names its successor; only the trigger moves, from
+                # `event_user(0)` to alarm 3, which does nothing but call it.
+                if b.get("pause"):
+                    stmts.append(f"l_messagecount = {n + 1}; alarm[3] = {int(b['pause'])}")
+                else:
+                    stmts.append(f"l_messagecount = {n + 1}; event_user(0)")
             body = ";\n".join(stmts) + ";"
             rungs.append(f"if (l_messagecount = {n}) {{\n{body}\n}}")
         # `g` is the gate scratch, `s` the spawn scratch — see gate_stmt and
@@ -2238,6 +2267,12 @@ draw_sprite_ext(sprite_index,image_index,xprevious - 4 + random(8),yprevious - 4
         binds += [
             (f"global.{g}_ctr", 0, 0, create),
             (f"global.{g}_ctr", 2, 2, start_code),
+            # alarm 3 is `pause:` running out. The rung that set it has already
+            # written l_messagecount, so this only has to knock. Bound
+            # unconditionally: an alarm nothing sets never fires, and making the
+            # bind conditional would mean a mission that gains its first pause:
+            # compiles to a ladder that silently stops there.
+            (f"global.{g}_ctr", 2, 3, "event_user(0);"),
             (f"global.{g}_ctr", 2, 5, meteor),
         ]
         if self.damaged:
