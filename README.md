@@ -48,6 +48,10 @@ cursor cache is a native DLL that hooks a Windows API import.
 * Fixes the DirectPlay prompt issue: "needs the following Windows feature: DirectPlay" on
   Windows 10/11. (Applies to the Ship Maker too.)
 * Off-screen sections, turrets and doodads skip their draw — worth a few ms in big battles.
+* A minimap that shows the room's real shape. Stock scales each axis into the square
+  independently, so any room that is not square is drawn distorted — and the view rectangle
+  with it. A 5600×2000 room drew a landscape view as a portrait box, 2.8× too tall. Now the
+  map letterboxes and the rectangle matches what is on screen.
 
 **The Ship Maker**
 
@@ -101,6 +105,7 @@ The cursor cache additionally needs `bsfnat.dll`, cross-compiled with mingw-w64 
 |---|---|
 | `crisp.gml`, `logo.gml`, `legacy.gml`, `cursor.gml` | delete the matching `mods/*.on` marker |
 | `fastdraw.gml` (the draw cull) | create `mods/fastdraw.off` — it is opt-*out* |
+| `minimap.gml` (aspect-correct minimap) | create `mods/minimap.off` — it is opt-*out* |
 | `smres.gml` (ShipMaker 1:1 resolution) | create `mods/smres.off` — it is opt-*out* |
 | `smpan.gml` (ShipMaker middle-mouse drag pan) | create `mods/smpan.off` — it is opt-*out* |
 | `smzoom.gml` (ShipMaker zoom % readout) | create `mods/smzoom.off` — it is opt-*out* |

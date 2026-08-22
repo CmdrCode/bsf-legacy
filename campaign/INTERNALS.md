@@ -350,12 +350,28 @@ minimap's own green, lifts on the same beat. It is also what stops the limit
 reading as a bug — a camera that silently refuses to pan is broken; one that
 stops at a line the map draws is a door.
 
-⚠ The rect is **re-derived**, not read off `ctr_GUI`. `mapx1`/`mapx2`/`mapsizew`
-are ctr_GUI instance variables in the stock source and reading them from an
-appended Draw action is still `Unknown variable mapx1`, 1321 times in one
-sitting. The minimap is `GUI_MinimapSize * global.l_zoom` square in the view's
-top-right corner and a world x lands at that fraction of it; that needs nothing
-but the view and the room.
+⚠ The rect is **re-derived**, not read off `ctr_GUI`. `mapx1`/`mapx2`/`mapsize`
+belong to **ctr_GUILow's** Create, not ctr_GUI's, so reading them from an action
+appended to ctr_GUI is `Unknown variable mapx1`, 1321 times in one sitting.
+(`mapsizew`/`mapsizeh` are ctr_GUI's own and *are* readable — the rule is per
+variable, not per event.) The minimap is `GUI_MinimapSize * global.l_zoom`
+square in the view's top-right corner, and everything else the fog needs comes
+from globals — see below.
+
+⚠ **The transform is `mods/minimap.gml`'s, not this file's.** The fog and the
+map underneath it have to agree to the pixel, or the limit reads as a rendering
+fault instead of a wall — so the scale and the letterbox offsets are read from
+`global.bsf_mm_u` / `_ox` / `_oy`, guarded by `global.bsf_mm`, rather than
+re-derived a second time. This is the same class of bug as the two install
+discoveries and the four copies of the wine overrides: two answers to one
+question means one drawer can move without the other.
+
+The stock transform is the fallback, for a game with `mods/minimap.off` — and it
+is *per axis*, `GUI_MinimapSize / room_width` and `GUI_MinimapSize / room_height`
+separately, which is exactly the distortion `minimap.gml` exists to remove. That
+is why `uy` is carried beside `u` instead of being assumed equal to it: the two
+paths differ in whether the room keeps its aspect ratio, and a shared `u` would
+quietly convert the fallback into a wrong answer rather than the stock one.
 
 ## The helm lock (`controls: on|off` on a beat)
 
