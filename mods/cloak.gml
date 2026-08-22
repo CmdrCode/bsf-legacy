@@ -83,6 +83,14 @@ if (variable_global_exists('bsf_cloak')) exit;
 if (!file_exists('mods/spr_UmbraCloak.png')) exit;
 global.bsf_cloak = 1;
 
+// A breadcrumb, because this file's failure mode is silence. `execute_file` on a
+// file that will not compile does nothing at all -- no dialog, no log line -- so
+// "start" alone in mods/cloak.log means this file began and died partway, and no
+// file at all means it never ran. battle.gml uses the same idiom.
+var lf;
+lf = file_text_open_write('mods/cloak.log');
+file_text_write_string(lf, 'start'); file_text_writeln(lf); file_text_close(lf);
+
 // ------------------------------------------------------------------ tunables
 // Steps, not seconds, because everything here runs per step. room_speed is 30.
 global.ck_drain = 0.4;      // budget per step while moving and cloaked
@@ -120,6 +128,15 @@ for (i = 0; i < global.ck_nslot; i += 1) {
 // stays -1 and every ship falls back to the plain image_alpha path below.
 global.ck_h = -1;
 global.ck_time = 0;
+// 1 while any ship on the field is hidden. The AI sweeps below are gated on it,
+// so they cost one comparison in the usual case of nothing being cloaked.
+global.ck_any = 0;
+// Rig-only. Set to 1, the binder skips sh_set while everything else -- the
+// slot, the depth band, the alpha -- stays exactly as it was, so the
+// bound/unbound pair differs by the shader bind and by nothing else. Dropping
+// ck_h instead would also release the slot and change how the ship is drawn,
+// which is precisely the confound the pair exists to avoid.
+global.ck_bypass = 0;
 if (variable_global_exists('sh_ok')) {
     if (global.sh_ok >= 1) {
         global.ck_h = external_call(global.sh_compile, 'mods/decloak.hlsl');
@@ -138,7 +155,7 @@ if (variable_global_exists('sh_ok')) {
 // event_inherited(), shadowing the firing step outright. Our Create does the
 // opposite and calls event_inherited() first, because the base initialisation is
 // exactly what we want.
-var spr, cre, o, eo;
+var spr, cre, stp, o, eo;
 
 // transparent=1 keys on the bottom-left pixel, which tools/mkmodart.py fills
 // with the stock turret key (0,128,64). Origin is the centre of a 15x15 plate.
@@ -164,21 +181,50 @@ cre =
   'l_iconsprite = spr_IcoDeflector;' +
   'l_iconspritesml = spr_IcoDeflectorsml;' +
   'l_special1 = 0.18;' +
-  'l_special2 = 0.02;';
+  'l_special2 = 0.02;' +
+// The weapon fields. A module is not a weapon and never uses these, but
+// ctr_Turrets' inherited alarm[0] reads l_arcrange and its alarm[10] reads
+// l_turning, and an unset one is an unknown-variable error every time that
+// alarm fires. ctr_Turrets' own Create does NOT define them -- they come from
+// nWep/nTur, which a module never goes through -- so they are set here.
+  'l_firingrate = 0; l_firingreload = 0; l_firingclip = 0;' +
+  'l_firingtimer = 0; l_firecount = 0;' +
+  'l_turning = 0; l_arcrange = 180; l_arcoffset = 0; l_deviation = 0;' +
+  'l_damage = 0; l_range2 = 0;';
 
-// No event_inherited(): see above. The module is a passive capability token --
-// all the cloak logic lives in the controller, in one place, so that the order
-// this Step runs in relative to the ship's own never matters.
+// The Step exists to SHADOW ctr_Turrets', which is the WEAPON FIRING logic and
+// which a module must never run. Guide rule 2 -- define an event the parent has
+// and the parent's stops running -- is normally the trap; here it is exactly
+// the behaviour wanted, and it is what NanoMatrix, Booster and Impeder all do.
+// (Deflector is the exception: it inherits the Step.)
+//
+// MEASURED 2026-08-22: with no Step of its own, the inherited one ran on the
+// module and threw `Unknown variable l_firingreload` 170 times in a nine-second
+// run. The weapon fields above are the belt to this braces, so that any OTHER
+// inherited event that reads one finds a number rather than an error.
+//
+// The cost of shadowing is that tr_updateWep() does not run for this mount, so
+// a ShipMaker trigger cannot drive it. The body is the module's own energy
+// regen -- energy is per-module in this engine; Deflector does its in Draw.
+//
+// All the actual cloak logic lives in the controller instead, in one place, so
+// the order this Step runs in relative to its ship's never has to be reasoned
+// about.
+stp = 'if (online == 0) exit;' +
+      'if (l_eng < l_maxeng) l_eng += l_engregen;';
+
 o = object_add();
 object_set_parent(o, ctr_Turrets);
 object_set_sprite(o, spr);
 object_event_add(o, 0, 0, cre);
+object_event_add(o, 3, 0, stp);
 global.bsf_umbracloak = o;
 
 eo = object_add();
 object_set_parent(eo, ctr_ETurrets);
 object_set_sprite(eo, spr);
 object_event_add(eo, 0, 0, cre);
+object_event_add(eo, 3, 0, stp);
 global.bsf_eumbracloak = eo;
 
 // A .shp is COMPILED, not parsed: `nTur2,x,y,UmbraCloak,...` is rebuilt as
@@ -417,7 +463,10 @@ object_event_add(ctl, 3, 2,
     '  if (global.ck_ship[s] != noone) {' +
     '    if (!instance_exists(global.ck_ship[s])) global.ck_ship[s] = noone;' +
     '  }' +
-    '}');
+    '}' +
+    'global.ck_any = 0;' +
+    'with (ctr_Ship)  { if (variable_local_exists("l_cloak_hidden")) { if (l_cloak_hidden == 1) global.ck_any = 1; } }' +
+    'with (ctr_EShip) { if (variable_local_exists("l_cloak_hidden")) { if (l_cloak_hidden == 1) global.ck_any = 1; } }');
 
 // =========================================================================
 // 3. AI BLINDNESS
@@ -431,16 +480,26 @@ object_event_add(ctl, 3, 2,
 // Keys are collected before anything is deleted: mutating a ds_map while
 // iterating it with find_first/find_next is not safe.
 //
+// ⚠ The walk is bounded by ds_map_size, NOT by testing the key against
+// undefined. `is_undefined` does NOT EXIST in v0.90d -- it is absent from the
+// runner's 1084 registered builtins (tools/gmbuiltins.py) -- and naming it here
+// was a FATAL compilation error in GUI_MainTitle's Create that took the whole
+// mod chain down with it: no menu, no probe, nothing. Measured 2026-08-22.
+// `grep -a -c` on the exe is NOT enough to answer "does this builtin exist";
+// the string is in the image for other reasons.
+//
 // KNOWN LIMIT: shipAI() runs at the end of the stock body, so the ship's own
 // movement AI sees one stale tick before this runs. Turret targeting -- the half
 // that actually shoots -- does not.
 var blind;
 blind =
-  'var mk, mv, dn, dl, j;' +
+  'var mk, mv, dn, dl, j, cnt;' +
+  'if (global.ck_any == 1) {' +
   'if (l_targets >= 0) {' +
   '  dn = 0;' +
+  '  cnt = ds_map_size(l_targets);' +
   '  mk = ds_map_find_first(l_targets);' +
-  '  while (!is_undefined(mk)) {' +
+  '  for (j = 0; j < cnt; j += 1) {' +
   '    mv = ds_map_find_value(l_targets, mk);' +
   '    if (instance_exists(mv)) {' +
   '      if (mv.l_cloak_hidden_ok == 1) {' +
@@ -455,6 +514,7 @@ blind =
   '  if (l_target.l_cloak_hidden_ok == 1) {' +
   '    if (l_target.l_cloak_hidden == 1) l_target = -4;' +
   '  }' +
+  '}' +
   '}';
 object_event_add(ctr_Ship,  2, 0, blind);
 object_event_add(ctr_EShip, 2, 0, blind);
@@ -471,18 +531,62 @@ object_event_add(ctl, 3, 2,
 // so blinding the map alone leaves existing locks live. Bullets already in
 // flight keep their heading and still collide, and the AI keeps shooting the
 // last known point for a beat, which is the intended read.
+//
+// ⚠ A TURRET LOCKS ONTO A SECTION, NOT A HULL. `shipEAI` sets
+// `l_weapon[j].c_target = l_section[...]`, and a ShipSection has no cloak
+// state, so reading l_cloak_hidden off c_target directly is an unknown-variable
+// error -- once per turret per frame, 494 of them in a nine-second run before
+// this was caught. The owner is what carries the state, so the target is asked
+// for its l_owner and the owner is asked for the flag.
+//
+// Gated on global.ck_any so that the whole sweep costs one comparison in the
+// overwhelmingly common case where nothing on the field is cloaked.
 object_event_add(ctl, 3, 2,
-    'with (ctr_Turrets) {' +
-    '  if (variable_local_exists("c_target")) {' +
-    '    if (instance_exists(c_target)) {' +
-    '      if (c_target.l_cloak_hidden_ok == 1) { if (c_target.l_cloak_hidden == 1) c_target = -4; }' +
+    'if (global.ck_any == 1) {' +
+    '  with (ctr_Turrets) {' +
+    '    if (variable_local_exists("c_target")) {' +
+    '      if (instance_exists(c_target)) {' +
+    '        var hid;' +
+    '        hid = 0;' +
+    '        with (c_target) {' +
+    '          if (variable_local_exists("l_cloak_hidden")) {' +
+    '            if (l_cloak_hidden == 1) hid = 1;' +
+    '          }' +
+    '          if (variable_local_exists("l_owner")) {' +
+    '            if (instance_exists(l_owner)) {' +
+    '              with (l_owner) {' +
+    '                if (variable_local_exists("l_cloak_hidden")) {' +
+    '                  if (l_cloak_hidden == 1) hid = 1;' +
+    '                }' +
+    '              }' +
+    '            }' +
+    '          }' +
+    '        }' +
+    '        if (hid == 1) c_target = -4;' +
+    '      }' +
     '    }' +
     '  }' +
-    '}' +
-    'with (ctr_ETurrets) {' +
-    '  if (variable_local_exists("c_target")) {' +
-    '    if (instance_exists(c_target)) {' +
-    '      if (c_target.l_cloak_hidden_ok == 1) { if (c_target.l_cloak_hidden == 1) c_target = -4; }' +
+    '  with (ctr_ETurrets) {' +
+    '    if (variable_local_exists("c_target")) {' +
+    '      if (instance_exists(c_target)) {' +
+    '        var hid2;' +
+    '        hid2 = 0;' +
+    '        with (c_target) {' +
+    '          if (variable_local_exists("l_cloak_hidden")) {' +
+    '            if (l_cloak_hidden == 1) hid2 = 1;' +
+    '          }' +
+    '          if (variable_local_exists("l_owner")) {' +
+    '            if (instance_exists(l_owner)) {' +
+    '              with (l_owner) {' +
+    '                if (variable_local_exists("l_cloak_hidden")) {' +
+    '                  if (l_cloak_hidden == 1) hid2 = 1;' +
+    '                }' +
+    '              }' +
+    '            }' +
+    '          }' +
+    '        }' +
+    '        if (hid2 == 1) c_target = -4;' +
+    '      }' +
     '    }' +
     '  }' +
     '}');
@@ -497,10 +601,12 @@ bnd = object_add();
 object_set_persistent(bnd, 1);
 object_event_add(bnd, 8, 0,
     'if (global.ck_h >= 0) {' +
+    '  if (global.ck_bypass == 0) {' +
     '  if (global.ck_ship[ckn] != noone) {' +
     '    external_call(global.sh_const, 0, global.ck_prog[ckn], global.ck_time, global.ck_ripple, 0);' +
     '    external_call(global.sh_const, 1, 0, 0, global.ck_umax, global.ck_vmax);' +
     '    external_call(global.sh_set, global.ck_h);' +
+    '  }' +
     '  }' +
     '}');
 
@@ -508,7 +614,9 @@ rst = object_add();
 object_set_persistent(rst, 1);
 object_event_add(rst, 8, 0,
     'if (global.ck_h >= 0) {' +
-    '  if (global.ck_ship[ckn] != noone) external_call(global.sh_reset);' +
+    '  if (global.ck_bypass == 0) {' +
+    '    if (global.ck_ship[ckn] != noone) external_call(global.sh_reset);' +
+    '  }' +
     '}');
 
 ins = instance_create(0, 0, ctl);
@@ -547,30 +655,94 @@ if (file_exists('mods/cloak_demo.on')) {
     object_event_add(dmo, 3, 0,
         'if (room == rm_Sandbox) {' +
         '  rtick += 1;' +
-        '  if (rtick == 150) {' +
-        '    with (ctr_Ship) { l_cloak_lock = 1; l_cloak_want = 0; l_cloak_now = 0; }' +
+// Arm the first ship on the field, so the rig exercises the real thing without
+// needing a custom hull in the room: the mount only has to exist and name the
+// ship as its l_owner, which is exactly what the part scan and the controller
+// look for.
+        '  if (rtick == 140) {' +
+        '    var made;' +
+        '    made = 0;' +
+        '    with (ctr_Ship) {' +
+        '      if (made == 0) {' +
+        '        made = 1;' +
+        '        var m;' +
+        '        m = instance_create(x, y, global.bsf_umbracloak);' +
+        '        m.l_owner = id;' +
+        '        m.rs_owner = id;' +
+        '      }' +
+        '    }' +
         '  }' +
-        '  if (rtick == 151) { with (ctr_Ship) l_cloak_want = 1; }' +
+// Polarity: l_cloak_want = 1 means WANTS TO BE CLOAKED, so a decloak is driven
+// by clearing it, not setting it. 150 takes the wheel and snaps the ship fully
+// cloaked; 151 asks for a decloak, and the 60-step transition runs under the
+// capture window that follows.
+        '  if (rtick == 150) {' +
+        '    with (ctr_Ship) { l_cloak_lock = 1; l_cloak_want = 1; l_cloak_now = 0; }' +
+        '  }' +
+        '  if (rtick == 151) { with (ctr_Ship) l_cloak_want = 0; }' +
+// Re-cloak, so the adjacent pair below falls inside a LIVE transition. The slot
+// is released the moment a ship is solid, so at rest there is nothing bound and
+// the pair would compare two identical frames -- which is exactly what it did
+// before this was added.
+        '  if (rtick == 250) { with (ctr_Ship) l_cloak_want = 1; }' +
         '  if (rtick == 141) screen_save("mods/dc_n0.png");' +
         '  if (rtick == 142) screen_save("mods/dc_n1.png");' +
         '  if (rtick >= 149) { if (rtick <= 289) {' +
         '    if ((rtick - 149) mod 4 == 0)' +
         '      screen_save("mods/dcf" + string((rtick - 149) / 4) + ".png"); } }' +
-        '  if (rtick == 291) screen_save("mods/dc_bound.png");' +
+        '  if (rtick == 291) { screen_save("mods/dc_bound.png"); global.ck_bypass = 1; }' +
         '  if (rtick == 292) screen_save("mods/dc_off.png");' +
         '  if (rtick == 295) {' +
         '    var f;' +
         '    f = file_text_open_write("mods/cloak.txt");' +
         '    file_text_write_string(f, "handle=" + string(global.ck_h)' +
         '      + " slots=" + string(global.ck_nslot)' +
+    '      + " any=" + string(global.ck_any)' +
+    '      + " mods=" + string(instance_number(global.bsf_umbracloak))' +
         '      + " binds=" + string(external_call(global.sh_stat, 2))' +
         '      + " fails=" + string(external_call(global.sh_stat, 3))' +
         '      + " err=" + string(external_call(global.sh_err)));' +
         '    file_text_writeln(f); file_text_close(f);' +
         '  }' +
+        '  if (rtick >= 145) { if (rtick <= 300) {' +
+        '    var tf, wrote;' +
+        '    wrote = 0;' +
+        '    with (ctr_Ship) {' +
+        '      if (wrote == 0) {' +
+        '        if (variable_local_exists("l_cloak_now")) {' +
+        '          wrote = 1;' +
+        '          tf = file_text_open_append("mods/cloak_trace.txt");' +
+        '          file_text_write_string(tf, string(other.rtick)' +
+        '            + " now=" + string(l_cloak_now)' +
+        '            + " hidden=" + string(l_cloak_hidden)' +
+        '            + " want=" + string(l_cloak_want)' +
+        '            + " bud=" + string(ck_bud)' +
+        '            + " slot=" + string(ck_slot)' +
+        '            + " parts=" + string(ck_np)' +
+        '            + " depth=" + string(depth));' +
+        '          file_text_writeln(tf); file_text_close(tf);' +
+        '        }' +
+        '      }' +
+        '    }' +
+        '  } }' +
         '  if (rtick == 310) game_end();' +
         '}');
     dins = instance_create(0, 0, dmo);
     dins.persistent = true;
     dins.depth = -10000006;
 }
+
+// Reached the end: say so, with everything a first in-game run wants to know.
+// `objects` proves the mount was built, `shader` is -1 when there is no DLL or
+// the HLSL would not compile (which is a working game with the effect off, not
+// a failure), and `hull_append` is the one that matters most -- see the note by
+// the ctr_Ship Create append above.
+lf = file_text_open_write('mods/cloak.log');
+file_text_write_string(lf,
+    'ok objects=' + string(global.bsf_umbracloak) + ',' + string(global.bsf_eumbracloak) +
+    ' sprite=' + string(spr) +
+    ' shader=' + string(global.ck_h) +
+    ' slots=' + string(global.ck_nslot) +
+    ' demo=' + string(file_exists('mods/cloak_demo.on')));
+file_text_writeln(lf);
+file_text_close(lf);
