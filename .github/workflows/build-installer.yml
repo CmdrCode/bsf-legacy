@@ -2,8 +2,12 @@
 #
 # PyInstaller cannot cross-compile, and this project is developed on Linux, so the
 # binary is built on a real windows-latest runner rather than under wine. `mods/`
-# is bundled into the exe and unpacked to sys._MEIPASS at run time; tools/install.py
-# reads it from there.
+# and bsfshader.dll are bundled into the exe and unpacked to sys._MEIPASS at run
+# time; tools/install.py reads both from there.
+#
+# Two jobs, because the two artefacts want opposite toolchains: the DLL is an
+# i686 mingw cross-build (Linux), the installer is PyInstaller (Windows). The
+# first feeds the second through an artifact.
 #
 # Security notes, since this workflow is deliberately locked down:
 #   * `permissions` is read-only by default and raised to `contents: write` only in
@@ -30,10 +34,62 @@ permissions:
   contents: read
 
 jobs:
+  # bsfshader.dll is built here rather than in the Windows job because it is an
+  # i686 mingw target and build.sh is the single answer to how it is built --
+  # duplicating those flags in PowerShell is how the two copies drift. It is a
+  # 32-bit DLL because the game is a 32-bit GM7 runner; a windows-latest MSVC
+  # build would default to x64 and load into nothing.
+  #
+  # It must be bundled: mods/shader.gml is a file of `external_define`s, so
+  # without the DLL that file aborts and install.py writes mods/shader.off. A
+  # source clone runs build.sh and has it; before this job, anyone installing
+  # from the released exe did not, which made every shader effect source-only.
+  #
+  # bsfnat.dll is deliberately NOT bundled. build.sh produces it in the same
+  # step, but it is the cursor cache -- a wine-specific optimisation that buys
+  # ~nothing on Windows, which is exactly what install.py prints when it finds
+  # no DLL. Shipping it would add weight to a Windows exe for no gain.
+  shader:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+
+      - name: Install i686 mingw
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-mingw-w64-i686
+
+      - name: Build bsfshader.dll
+        run: tools/build.sh
+
+      # Assert what was actually produced. A wrong-architecture DLL still builds
+      # and still uploads; it fails at external_define on a player's machine,
+      # which is the silent failure this whole job exists to prevent.
+      - name: Check it is a 32-bit PE
+        run: |
+          file tools/bsfshader.dll
+          file tools/bsfshader.dll | grep -q 'PE32 executable' \
+            || { echo 'bsfshader.dll is not a PE32 (32-bit) DLL'; exit 1; }
+          file tools/bsfshader.dll | grep -q 'PE32+' \
+            && { echo 'bsfshader.dll is 64-bit; the game is 32-bit'; exit 1; }
+          exit 0
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        with:
+          name: bsfshader-dll
+          path: tools/bsfshader.dll
+          if-no-files-found: error
+
   build:
+    needs: shader
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4.3.0
+        with:
+          name: bsfshader-dll
+          path: .
 
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
         with:
@@ -55,6 +111,7 @@ jobs:
           pyinstaller --onefile --console
           --name BSF-Legacy-Installer
           --add-data "mods;mods"
+          --add-binary "bsfshader.dll;."
           --paths tools
           --hidden-import patch_bsf
           --hidden-import hwvp

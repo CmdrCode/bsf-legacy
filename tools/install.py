@@ -165,9 +165,11 @@ SHADER_DLL = 'bsfshader.dll'
 def install_shader(game_dir):
     """Install the shader extension if its DLL was bundled, else turn it off.
 
-    Same shape as `install_dll` and for the same reason: the DLL is built by a
-    cross-compiler and is not checked in, so a source clone has it and the
-    Windows installer build may not.
+    Same shape as `install_dll`: the DLL is built by a cross-compiler and is
+    not checked in, so it has to be found rather than assumed. The released exe
+    now bundles it -- the `shader` job in build-installer.yml cross-builds it
+    and PyInstaller drops it at the _MEIPASS root -- so the not-found branch is
+    for a source clone where `tools/build.sh` has not been run yet.
 
     Turning it off when absent is not strictly needed -- `mods/shader.gml` is a
     file of `external_define`s and nothing else, so a missing DLL aborts that
