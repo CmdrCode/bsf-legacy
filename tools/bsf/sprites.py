@@ -25,10 +25,12 @@ from __future__ import annotations
 import base64
 import configparser
 import functools
+import hashlib
 import io
 import os
 import pathlib
 import re
+import time
 
 import numpy as np
 from PIL import Image
@@ -204,6 +206,56 @@ def gm_colour(value: float) -> tuple[int, int, int]:
 # resolution
 # --------------------------------------------------------------------------
 
+#: How long a sprite-tree digest is reused. The index poll runs at ~1.7 Hz and
+#: two routes want the digest on each one, so this bounds the walk at a handful
+#: a second however many pages are watching -- while staying short enough that a
+#: file dropped into the tree shows up on the next poll, not the one after.
+TREE_TTL = 0.2
+
+_TREE: tuple[float, str] = (0.0, '')
+
+
+def tree_rev(*, fresh: bool = False) -> str:
+    """A digest over every sprite file's path, mtime and size.
+
+    `fresh` skips the TTL below. Anything driving this faster than the poll it
+    was sized for -- a test, mostly -- wants the walk it asked for rather than
+    the answer from 200 ms ago.
+
+    This is what makes sprites hot-reloadable. A ship's own bytes say nothing
+    about the art it names, so a hull's revision could not see a sprite being
+    added, edited or deleted underneath it: the preview would go on drawing
+    whatever it first loaded, and a sprite the ship names but that does not
+    exist *yet* would stay `unresolved` until the ship file itself was touched.
+    That last case is the one that bites, because it is exactly the state you
+    are in while drawing the sprite.
+
+    A digest of the whole tree rather than of one hull's sprites, because the
+    interesting event is a file that is not there yet -- there is nothing to
+    watch until it appears. 565 files measures 1.5 ms warm.
+    """
+    global _TREE
+    now = time.monotonic()
+    if not fresh and now - _TREE[0] < TREE_TTL:
+        return _TREE[1]
+    h = hashlib.sha256()
+    for root in (SPRITES, EXE_CACHE):
+        if not root.is_dir():
+            continue
+        for dirpath, dirnames, filenames in os.walk(root):
+            dirnames.sort()                          # a stable walk, so a stable digest
+            for fn in sorted(filenames):
+                fp = os.path.join(dirpath, fn)
+                try:
+                    st = os.stat(fp)
+                except OSError:                      # vanished mid-walk: it is a change
+                    continue
+                h.update(f'{os.path.relpath(fp, root)}\0{st.st_mtime_ns}\0'
+                         f'{st.st_size}\0'.encode())
+    _TREE = (now, h.hexdigest()[:12])
+    return _TREE[1]
+
+
 def _find_stem(stem: str) -> pathlib.Path | None:
     for ext in ('.png', '.gif'):
         p = MOD_ART / (stem + ext)
@@ -303,9 +355,34 @@ def barrel_pivot(vis: np.ndarray) -> float:
     return (run[0] + run[-1]) / 2 + PIVOT_BIAS
 
 
-@functools.lru_cache(maxsize=512)
+def stamp(path_str: str) -> tuple:
+    """(mtime, size) for a file, or `()` when it is not there.
+
+    The cache key rather than a freshness check: a sprite that changed is a
+    different key, so it is re-read, and the old entry ages out of the LRU on
+    its own. Nothing has to know when to invalidate.
+
+    `st_mtime_ns` rather than a content hash, which would mean re-reading 1.1 MB
+    of art on every poll to answer a question that is almost always "nothing
+    changed". The gap that leaves is a rewrite that keeps the byte count *and*
+    lands inside the filesystem's mtime granularity -- nanoseconds on ext4, but
+    a second or two on FAT and some network mounts. Touch the file if a sprite
+    ever seems stuck.
+    """
+    try:
+        st = os.stat(path_str)
+    except OSError:
+        return ()
+    return (st.st_mtime_ns, st.st_size)
+
+
 def load(path_str: str, mask: bool, pivot: bool = False) -> Sprite:
     """Load a sprite, keyed and converted, with its origin resolved."""
+    return _load(path_str, mask, pivot, stamp(path_str))
+
+
+@functools.lru_cache(maxsize=512)
+def _load(path_str: str, mask: bool, pivot: bool, _stamp: tuple) -> Sprite:
     path = pathlib.Path(path_str)
     rgb_frames = _frames_rgb(Image.open(path))
     key = rgb_frames[0][-1, 0]                     # bottom-left pixel: GM's key
@@ -379,7 +456,6 @@ def exe_frame_path(name: str, frame: int = 0) -> pathlib.Path | None:
     return p if p.exists() else None
 
 
-@functools.lru_cache(maxsize=512)
 def load_rgba(path_str: str, mask: bool) -> Sprite:
     """Load an already-keyed RGBA frame, preserving its alpha.
 
@@ -388,6 +464,11 @@ def load_rgba(path_str: str, mask: bool) -> Sprite:
     back through the bottom-left keying that `load()` applies to exported GIFs
     would throw that away and re-derive it, worse.
     """
+    return _load_rgba(path_str, mask, stamp(path_str))
+
+
+@functools.lru_cache(maxsize=512)
+def _load_rgba(path_str: str, mask: bool, _stamp: tuple) -> Sprite:
     im = Image.open(path_str).convert('RGBA')
     a = np.array(im)
     if mask:

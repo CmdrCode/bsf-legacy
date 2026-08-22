@@ -22,6 +22,7 @@ editor's own draw order and is one of the things `ship verify` exists to check.
 """
 from __future__ import annotations
 
+import hashlib
 import pathlib
 import sys
 
@@ -229,28 +230,68 @@ def bbox(ops: list[Op]) -> list[float]:
     Uses each sprite's rotated corner extents rather than its alpha, so this is
     an upper bound on the true silhouette -- adequate for framing a render, and
     deliberately not what `ship check` will use for occlusion.
+
+    The corners are taken **relative to the origin**, not to the sprite centre.
+    `ox, oy` is the point the sprite rotates about and a turret's is the base of
+    its barrel -- 5px right of centre on a Blaster -- so a box centred on the
+    origin is that far from the art, and stopped being an upper bound at all on
+    the side the origin leans away from.
     """
     import math
     if not ops:
         return [0.0, 0.0, 0.0, 0.0]
     xs, ys = [], []
     for o in ops:
-        w, h = o['w'] * abs(o['xs']), o['h'] * abs(o['ys'])
         a = math.radians(o['ang'])
-        ca, sa = abs(math.cos(a)), abs(math.sin(a))
-        hw, hh = (w * ca + h * sa) / 2, (w * sa + h * ca) / 2
-        xs += [o['x'] - hw, o['x'] + hw]
-        ys += [o['y'] - hh, o['y'] + hh]
+        ca, sa = math.cos(a), math.sin(a)
+        for lx in (-o['ox'], o['w'] - o['ox']):
+            for ly in (-o['oy'], o['h'] - o['oy']):
+                px, py = lx * o['xs'], ly * o['ys']
+                xs.append(o['x'] + px * ca + py * sa)   # GM's angle is CCW, and
+                ys.append(o['y'] - px * sa + py * ca)   # y is down
     return [round(min(xs), 2), round(min(ys), 2), round(max(xs), 2), round(max(ys), 2)]
 
 
 def for_web(sc: dict) -> dict:
-    """The same scene with sprite pixels inlined, for the browser."""
+    """The same scene with sprite pixels inlined, for the browser.
+
+    On the way out `spr` stops being a path and becomes a token for the *pixels*
+    -- `sha256` of the data URI. Three things fall out of that, and all three
+    are the point:
+
+      * **Sprites hot-reload.** The page keys its image, alpha and tint caches
+        by `spr`, so art that changed arrives under a key it has never seen and
+        is decoded again. Art that did not is still a cache hit, which is what
+        keeps a switch between hulls free.
+      * **No absolute path on the wire.** `spr` is a real filesystem path in the
+        scene the renderers consume, and `--bind auto` offers this page on the
+        tailnet, so sending it published the account the game sits under. Roots
+        already travelled as short labels; `spr` and `file` were the two that
+        did not, and `file` is dropped below.
+      * **The same file loaded two ways stops colliding.** The key was the path,
+        but the pixels also depend on `mask` and on the turret pivot, so one
+        sprite wanted by two ops with different flags served whichever was
+        reached first.
+
+    The ops are copied rather than rewritten in place: `build()`'s ops are what
+    `render` and `check` read, and a path is what those need.
+    """
     out = dict(sc)
+    # The ship's own path is the other absolute one, and nothing reads it --
+    # the page titles itself from the index entry's bare filename. It stays in
+    # `build()`, which is consumed in-process, and stops here.
+    out.pop('file', None)
+    out['ops'] = [Op(o) for o in sc['ops']]
     seen: dict[str, str] = {}
-    for o in sc['ops']:
-        if o['spr'] not in seen:
-            sp = sprites.load_any(o['spr'], o['mask'], o['kind'] in ('weapon', 'module'))
-            seen[o['spr']] = sprites.data_uri(sp)
+    tokens: dict[tuple, str] = {}
+    for o in out['ops']:
+        ident = (o['spr'], o['mask'], o['kind'] in ('weapon', 'module'))
+        tok = tokens.get(ident)
+        if tok is None:
+            uri = sprites.data_uri(sprites.load_any(*ident))
+            tok = hashlib.sha256(uri.encode()).hexdigest()[:16]
+            tokens[ident] = tok
+            seen[tok] = uri
+        o['spr'] = tok
     out['sprites'] = seen
     return out

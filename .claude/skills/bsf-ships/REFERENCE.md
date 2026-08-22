@@ -259,9 +259,70 @@ GET /scene.json?ship=KEY   the draw list, sprites inlined, `rev` alongside
 - **`/scene.json` returns the `rev` it served**, so a switch costs one fetch
   rather than two. Without it the next poll sees a different hash and re-fetches
   a scene the canvas already holds.
+- **Sprites hot-reload, not just ships.** A hull's `rev` is its own bytes *plus*
+  `sprites.tree_rev()`, a digest of every file under `Custom sprites/` (and the
+  exe cache) by path, mtime and size — 565 files, 1.5 ms warm, reused for
+  `TREE_TTL` = 200 ms. A ship's bytes say nothing about the art it names, so
+  without that half a sprite dropped in beside a hull waiting for it stayed
+  `unresolved` until the ship file itself was touched — the state you are in
+  while drawing the sprite. The digest covers the *whole tree* deliberately: the
+  case worth catching is a file that does not exist yet, and there is nothing to
+  watch until it appears. Any sprite touched moves every hull's rev, which costs
+  a watching page one re-fetch.
+- **Three caches had to learn it, and each was invisible to the others.**
+  `sprites.load`/`load_rgba` are keyed by `(path, flags, stamp(path))` rather
+  than by path, so changed art is simply a different key and the stale entry
+  ages out of the LRU — nothing decides when to invalidate. `stamp` is
+  `(st_mtime_ns, size)`, not a content hash, which would mean re-reading 1.1 MB
+  per poll to answer "nothing changed"; the gap that leaves is a same-size
+  rewrite inside the filesystem's mtime granularity, which is nanoseconds on
+  ext4 but a second or two on FAT and some network mounts. The browser's caches
+  fall out of the token below.
+- **Nothing on the wire is a path — `spr` is a token for the pixels.**
+  `for_web` replaces each op's `spr` with `sha256(data URI)[:16]` and drops the
+  scene's `file`. Three things at once: the page's image, alpha and tint caches
+  are keyed by `spr`, so changed art arrives under a key it has never seen and
+  is decoded again *while unchanged art stays a hit*; `--bind auto` offers this
+  page on the tailnet, and both fields were absolute paths naming the account
+  the game sits under; and one sprite wanted by two ops with different `mask` or
+  pivot flags stops colliding, which the path key silently got wrong. `build()`
+  keeps real paths — `render` and `check` need them — so the rewrite copies the
+  ops rather than mutating them. `selftest.py` pins the privacy half directly
+  and the hot-reload half against a temporary sprite tree.
 - **`/index` echoes the key it answered about as `req`.** A poll in flight when
   you switch hulls answers about the *previous* one; adopting that undoes the
   switch, which is exactly what two fast presses of `]` did until `req` existed.
+- **Hover asks the art, not the sheet.** The pick inverts the blitter's own
+  transform, lands on a sprite pixel and reads its alpha. Both halves of that
+  matter and both were once wrong: a sprite is not centred on its origin
+  (`ox,oy` is the rotation point — a Blaster's is the base of its barrel, 5.0px
+  right of centre, a NanoMatrix's 4.5), and a sheet is mostly empty (a section
+  is 80x80 holding a plate filling 4% of it for `BSF_Stock09`, 27% for
+  `BSF_Stock17`). A box centred on the origin therefore claimed forty pixels of
+  clear space in every direction, and — sections sorting by depth — the front
+  plate's empty sheet shadowed everything behind it. Measured on the Bolthole
+  against the renderer's id buffer, it named the right part on **39.9%** of
+  painted pixels and claimed a part on **47.6%** of the background; the pixel
+  test scores 100% on both. `selftest.py` pins it by running the page's own JS
+  under node (`pickcheck.mjs`) against that id buffer — the renderer already
+  knows, per pixel, which op it drew, so there is no second opinion to maintain.
+- **Overlap is answered by the stack, not by the top of it.** A pick collects
+  *every* part under the cursor, front-most first, and the HUD lists them with a
+  depth count. `↑`/`↓` walk the list without moving the mouse, which is the only
+  way to reach a plate that is wholly buried. **Click pins** the stack so the
+  cursor can leave — pinned, the list itself is clickable; `esc`, or a click on
+  clear space, frees it. The current part is marked by its own silhouette in
+  green rather than by a box, since the box is exactly the thing that is not the
+  part.
+- **`peel` (the toggle, or `p`) hides whatever is drawn *in front of* the
+  current part**, which is what actually hides it; parts behind stay at the
+  usual dim, because those are context rather than obstruction. Unpeeled they
+  ghost to 0.10 instead. This is the viewer's answer to D3 — buried plate is
+  armour, so the tool shows it rather than inviting you to delete it.
+- **The pick holds the op, not its id.** Ids are unique only within a kind: the
+  Bolthole has 33 collisions across `section`/`weapon`/`module`, so an id-keyed
+  highlight lit whichever op happened to match. `render.py` had already learned
+  this for `highlight=`; the page had not.
 - **Zoom, pan and the toggles survive a switch** — flipping between two hulls at
   one scale and screen position is a blink comparator. `0` or a double-click
   re-centres, which is what makes keeping the pan safe. `[` and `]` cycle.

@@ -39,9 +39,10 @@ import urllib.parse
 import urllib.request
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-import model   # noqa: E402
-import paths   # noqa: E402
-import scene   # noqa: E402
+import model    # noqa: E402
+import paths    # noqa: E402
+import scene    # noqa: E402
+import sprites  # noqa: E402
 
 #: What the dropdown lists. `.sb4` is the editable source and `.shp` is what the
 #: game actually loads, so both belong on the page -- a `.shp` that has fallen
@@ -205,7 +206,20 @@ class Index:
 # --------------------------------------------------------------------------
 
 def _rev(raw: bytes) -> str:
-    return hashlib.sha256(raw).hexdigest()[:12]
+    """A hull's revision: its own bytes, and the state of the sprite tree.
+
+    The second half is what hot-reloads art. The page re-fetches exactly when
+    the rev moves, and a ship's bytes say nothing about the sprites it names --
+    so without this, art dropped in beside a hull that is waiting for it never
+    arrives, and a sprite edited in place goes on being drawn as it was when the
+    server first read it.
+
+    It means any sprite touched moves every hull's rev, which sounds broad and
+    is not: a page holds one hull, so it costs that page one re-fetch, and the
+    alternative -- digesting only the sprites a hull already resolved -- is
+    blind to the case worth catching, a file that is not there yet.
+    """
+    return hashlib.sha256(raw + sprites.tree_rev().encode()).hexdigest()[:12]
 
 
 def resolve(route: str, query: dict, index: Index) -> tuple[int, str, bytes]:
@@ -323,9 +337,16 @@ PAGE = r'''<!doctype html>
   canvas{position:absolute;inset:0;width:100%;height:100%;display:block;cursor:crosshair}
   #hud{position:absolute;left:12px;bottom:12px;pointer-events:none;
        background:rgba(5,7,10,.85);border:1px solid var(--line);border-radius:5px;
-       padding:7px 10px;min-width:230px}
+       padding:7px 10px;min-width:230px;max-height:calc(100% - 24px);overflow:auto}
   #hud.empty{display:none}
+  #hud.pin{pointer-events:auto;border-color:#62e07d}
   #hud b{color:#62e07d}
+  #hud .sep{margin-top:6px;padding-top:5px;border-top:1px solid var(--line);
+            color:var(--dim)}
+  #hud .row{white-space:nowrap;color:var(--dim)}
+  #hud.pin .row{cursor:pointer}
+  #hud.pin .row:hover{color:var(--fg)}
+  #hud .row.on{color:var(--fg)}
   #err{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
        background:rgba(5,7,10,.94);border:1px solid var(--warn);border-radius:5px;
        padding:12px 16px;max-width:70ch;color:var(--warn)}
@@ -359,13 +380,21 @@ PAGE = r'''<!doctype html>
   <label><input type="checkbox" id="mounts"> mounts</label>
   <label><input type="checkbox" id="ids"> ids</label>
   <label><input type="checkbox" id="axes"> centreline</label>
+  <label><input type="checkbox" id="peel" title="hide whatever is drawn in front of the current part"> peel</label>
   <span class="stat"><kbd>drag</kbd> pan · <kbd>wheel</kbd> zoom · <kbd>hover</kbd> inspect
+    · <kbd>click</kbd> pin · <kbd>↑</kbd><kbd>↓</kbd> through the stack · <kbd>p</kbd> peel
     · <kbd>[</kbd><kbd>]</kbd> ship · <kbd>0</kbd> centre</span>
 </footer>
 <script>
 const cv=document.getElementById('c'),ctx=cv.getContext('2d');
 const ui=id=>document.getElementById(id);
-let SC=null,IMGS={},pan={x:0,y:0},drag=null,hover=null,rev='';
+let SC=null,IMGS={},pan={x:0,y:0},drag=null,rev='';
+// What the cursor is over. `stack` is every part under it, front-most first,
+// `si` which of them is current and `cur` that op itself -- the op, not its id,
+// because ids are only unique within a kind and a hull carries a section 4, a
+// weapon 4 and a module 4. `pinned` freezes the stack so you can walk it
+// without the mouse having to hold still.
+let stack=[],si=0,cur=null,pinned=false;
 // Ship state. `sel` is the hull on show and lives in the URL; `loaded` is the
 // one the canvas actually holds, so a switch repaints even when two files
 // happen to hash alike. `stamps` is the last (mtime,size) seen per hull and
@@ -437,6 +466,7 @@ function apply(ix){
   }
   if(sel)ui('ship').value=sel;
   if(!sel){SC=null;loaded=null;ui('nm').textContent='—';
+    stack=[];si=0;cur=null;pinned=false;hud();   // nothing left to be over
     showErr('no ships found','nothing with a .sb4 or .shp suffix in the watched roots yet.');
     draw();return;}
 
@@ -449,6 +479,24 @@ async function fetchScene(key){
   const r=await fetch('scene.json?ship='+encodeURIComponent(key),{cache:'no-store'});
   return await r.json();
 }
+// `spr` is a token for the pixels, so redrawing a sprite arrives under a key
+// we have never seen and decodes as new art -- that is sprite hot-reload, and
+// it costs nothing on the common path where nothing changed. The old entries
+// are what needs saying: keep the ones this hull still wants plus one hull's
+// worth of slack, so flipping between two hulls stays free while an afternoon
+// of redrawing one sprite does not accumulate every version of it.
+const KEEP = 400;
+function prune(sc){
+  const live=new Set(sc.ops.map(o=>o.spr));
+  for(const store of [IMGS,ALPHA]){
+    const keys=Object.keys(store);
+    if(keys.length<=KEEP)continue;
+    for(const k of keys)if(!live.has(k))delete store[k];
+  }
+  const tk=Object.keys(TINT);
+  if(tk.length>KEEP)for(const k of tk)if(!live.has(k.split('|')[0]))delete TINT[k];
+}
+
 async function loadScene(){
   const key=sel;
   let sc=await fetchScene(key);
@@ -466,6 +514,8 @@ async function loadScene(){
     const im=new Image();im.onload=()=>{IMGS[k]=im;res()};im.onerror=res;im.src=src;})));
   if(key!==sel)return;
   SC=sc;loaded=key;loadedRev=sc.rev;
+  stack=[];si=0;cur=null;pinned=false;hud();   // ops from the old hull are gone
+  prune(sc);
   document.title=(files[key]||sc.name)+' — ship preview';
   ui('nm').textContent=sc.name;ui('ns').textContent=sc.counts.section;
   ui('nw').textContent=sc.counts.weapon;ui('nm2').textContent=sc.counts.module;
@@ -487,17 +537,17 @@ function visible(){const b=ui('bridge').checked;
 // each combination is built once -- and shared across ships, which is why
 // switching hulls costs one fetch and no redecode.
 const TINT={};
-function tinted(o){
-  const key=o.spr+'|'+o.blend;
+function tint(spr,w,h,col){
+  const key=spr+'|'+col;
   if(TINT[key])return TINT[key];
-  const im=IMGS[o.spr];
-  const c=document.createElement('canvas');c.width=o.w;c.height=o.h;
+  const im=IMGS[spr];
+  const c=document.createElement('canvas');c.width=w;c.height=h;
   const x=c.getContext('2d');
-  x.drawImage(im,0,0,o.w,o.h,0,0,o.w,o.h);
+  x.drawImage(im,0,0,w,h,0,0,w,h);
   x.globalCompositeOperation='multiply';
-  x.fillStyle=o.blend;x.fillRect(0,0,o.w,o.h);
+  x.fillStyle=col;x.fillRect(0,0,w,h);
   x.globalCompositeOperation='destination-in';
-  x.drawImage(im,0,0,o.w,o.h,0,0,o.w,o.h);
+  x.drawImage(im,0,0,w,h,0,0,w,h);
   TINT[key]=c;return c;
 }
 
@@ -523,12 +573,32 @@ function draw(){
     ctx.moveTo(cx+pan.x,0);ctx.lineTo(cx+pan.x,cv.height);ctx.stroke();
   }
   ctx.imageSmoothingEnabled=z<3;
-  for(const o of visible()){
+  // Depth is the whole point of the isolate: a hull is stacked plates, so what
+  // is *in front of* the current part is what hides it. Those fade to a ghost,
+  // or vanish entirely under `peel`; what is behind it only dims, because that
+  // is context rather than an obstruction.
+  const ops=visible(), ci=cur?ops.indexOf(cur):-1, peel=ui('peel').checked;
+  for(let i=0;i<ops.length;i++){
+    const o=ops[i];
     const im=IMGS[o.spr];if(!im)continue;
+    let a=o.alpha??1;
+    if(ci>=0&&i!==ci){
+      if(i>ci){if(peel)continue; a*=0.10;}
+      else a*=0.35;
+    }
     const done=place(o,z,cx,cy);
-    ctx.globalAlpha=(o.alpha??1)*(hover!==null&&hover!==o.id?0.35:1);
-    const src=(o.mask&&o.blend!=='#FFFFFF')?tinted(o):im;
+    ctx.globalAlpha=a;
+    const src=(o.mask&&o.blend!=='#FFFFFF')?tint(o.spr,o.w,o.h,o.blend):im;
     ctx.drawImage(src,0,0,o.w,o.h,-o.ox,-o.oy,o.w,o.h);
+    done();
+  }
+  // Mark the current part by its own silhouette rather than by a box: the box
+  // is exactly the thing that is not the part -- BSF_Stock09 fills 4% of its
+  // 80x80 sheet -- so outlining it would draw the lie this commit removes.
+  if(ci>=0&&IMGS[ops[ci].spr]){
+    const o=ops[ci],done=place(o,z,cx,cy);
+    ctx.globalAlpha=0.30;
+    ctx.drawImage(tint(o.spr,o.w,o.h,'#62E07D'),0,0,o.w,o.h,-o.ox,-o.oy,o.w,o.h);
     done();
   }
   ctx.globalAlpha=1;
@@ -543,46 +613,140 @@ function draw(){
       ctx.fillText(o.id,cx+o.x*z+pan.x+2,cy+o.y*z+pan.y-2);}
 }
 
-// Hover picks the topmost op whose rotated local box contains the cursor --
-// the same transform the blitter uses, inverted.
-function pick(mx,my){
+// -- picking --------------------------------------------------------------
+// Ask the art, not a box. Two things made the box wrong, and both of them are
+// the same mistake -- that a sprite is its sheet:
+//
+//   * The sheet is mostly empty. A section is an 80x80 sheet holding a plate
+//     that fills 4% of it (BSF_Stock09) to 27% (BSF_Stock17), so a box test
+//     claimed forty pixels of clear space in every direction, and -- because
+//     sections sort by depth -- the front-most plate's empty sheet shadowed
+//     every part behind it.
+//   * The sheet is not centred on the origin. `ox,oy` is the point the sprite
+//     rotates about, which for a turret is the base of its barrel: 5.0px right
+//     of centre on a Blaster, 4.5 on a NanoMatrix. A box centred on the origin
+//     therefore sat that far from the turret it was meant to select.
+//
+// So: invert the blitter's transform, land on a pixel, read its alpha. The
+// transform is the same one `place()` applies, and the sprite occupies local
+// x in [-ox, w-ox] -- the rect `drawImage` is given below, not a centred box.
+function local(o,mx,my){
   const z=parseFloat(ui('zoom').value),d=devicePixelRatio||1;
   const cx=cv.width/d/2, cy=cv.height/d/2;
-  const ops=visible();
-  for(let i=ops.length-1;i>=0;i--){
-    const o=ops[i];
-    const dx=(mx-cx-pan.x)/z-o.x, dy=(my-cy-pan.y)/z-o.y;
-    const a=-o.ang*Math.PI/180;
-    let lx=dx*Math.cos(a)+dy*Math.sin(a), ly=-dx*Math.sin(a)+dy*Math.cos(a);
-    lx/=o.xs; ly/=o.ys;
-    if(Math.abs(lx)<=o.w/2&&Math.abs(ly)<=o.h/2)return o;
+  const dx=(mx-cx-pan.x)/z-o.x, dy=(my-cy-pan.y)/z-o.y;
+  const a=-o.ang*Math.PI/180;                // undo place()'s rotate, then scale
+  const lx=(dx*Math.cos(a)+dy*Math.sin(a))/o.xs;
+  const ly=(-dx*Math.sin(a)+dy*Math.cos(a))/o.ys;
+  return [lx+o.ox, ly+o.oy];                 // ...into sprite pixel coordinates
+}
+
+// Alpha per sprite sheet, read once and kept as long as the image is. The art
+// arrives as data URIs, so the canvas is never tainted and getImageData is
+// allowed; GM's transparency key leaves every alpha exactly 0 or 255. A sheet
+// we cannot read falls back to its rect, which is the old behaviour and still
+// better than picking nothing.
+const ALPHA={};
+function alphaOf(spr){
+  if(spr in ALPHA)return ALPHA[spr];
+  const im=IMGS[spr];let a=null;
+  if(im&&im.naturalWidth){
+    const c=document.createElement('canvas');
+    c.width=im.naturalWidth;c.height=im.naturalHeight;
+    const x=c.getContext('2d',{willReadFrequently:true});
+    x.drawImage(im,0,0);
+    try{a={w:c.width,d:x.getImageData(0,0,c.width,c.height).data};}
+    catch(e){a=null;}
   }
-  return null;
+  return ALPHA[spr]=a;
+}
+
+function hit(o,mx,my){
+  const p=local(o,mx,my),lx=p[0],ly=p[1];
+  // Bounds first, and before the truncation: `|0` rounds toward zero, so a
+  // local -0.4 would become row 0 and report a hit one pixel outside the art.
+  if(!(lx>=0&&ly>=0&&lx<o.w&&ly<o.h))return false;
+  const a=alphaOf(o.spr);
+  if(!a)return true;
+  // Multi-frame sheets are packed as a horizontal strip and the blitter draws
+  // frame 0, so lx<o.w keeps this inside the frame the canvas actually shows.
+  return a.d[(((ly|0)*a.w)+(lx|0))*4+3]>8;
+}
+
+// Everything under the cursor, front-most first. The stack *is* the answer to
+// overlap: hulls are built from deliberately stacked plates, so the cursor is
+// normally several parts deep and the front one is rarely the whole story.
+function pickStack(mx,my){
+  const ops=visible(),out=[];
+  for(let i=ops.length-1;i>=0;i--)if(hit(ops[i],mx,my))out.push(ops[i]);
+  return out;
+}
+
+// A ship file is untrusted text -- `nShp`'s name field is whatever is on disk.
+const esc=t=>String(t).replace(/[<>&"]/g,c=>
+  ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
+
+function hud(){
+  const h=ui('hud');
+  if(!cur){h.className='empty';h.innerHTML='';return;}
+  h.className=pinned?'pin':'';
+  const o=cur;
+  let s=`<b>${esc(o.kind)} ${esc(o.id)}</b> ${esc(o.name)}<br>`+
+    `pos ${o.x.toFixed(2)}, ${o.y.toFixed(2)}${o.y<0?' (up)':''}<br>`+
+    `ang ${esc(o.ang)}°  flip ${o.xs<0?'X':'-'}${o.ys<0?'Y':'-'}  depth ${esc(o.z)}<br>`+
+    (o.parent!==undefined?`parent ${esc(o.parent||'core')}  mirror ${esc(o.mirror??'—')}<br>`:'')+
+    `<span style="color:${esc(o.blend)}">■</span> ${esc(o.blend)}`;
+  if(stack.length>1){
+    s+=`<div class="sep">${stack.length} deep here`+
+       (pinned?' · pinned, esc frees':' · click to pin')+
+       ` · <kbd>↑</kbd><kbd>↓</kbd></div>`+
+       stack.map((q,n)=>`<div class="row${n===si?' on':''}" data-n="${n}">`+
+         `${n===si?'▸':'·'} ${esc(q.kind)} ${esc(q.id)} ${esc(q.name)}`+
+         `</div>`).join('');
+  }
+  h.innerHTML=s;
+}
+
+// Move through the stack without moving the mouse -- the only way to reach a
+// plate that is wholly buried, since nowhere on screen has it in front.
+function step(k){
+  if(stack.length<2)return;
+  si=(si+k+stack.length)%stack.length;cur=stack[si];hud();draw();
+}
+function setStack(st){
+  stack=st;si=0;cur=st[0]||null;hud();draw();
 }
 
 cv.addEventListener('mousemove',e=>{
   const r=cv.getBoundingClientRect(),mx=e.clientX-r.left,my=e.clientY-r.top;
-  if(drag){pan.x=drag.px+mx-drag.mx;pan.y=drag.py+my-drag.my;draw();return;}
-  if(!SC)return;
-  const o=pick(mx,my),h=ui('hud');
-  hover=o?o.id:null;
-  if(!o){h.className='empty';draw();return;}
-  h.className='';
-  h.innerHTML=`<b>${o.kind} ${o.id}</b> ${o.name}<br>`+
-    `pos ${o.x.toFixed(2)}, ${o.y.toFixed(2)}${o.y<0?' (up)':''}<br>`+
-    `ang ${o.ang}°  flip ${o.xs<0?'X':'-'}${o.ys<0?'Y':'-'}  depth ${o.z}<br>`+
-    (o.parent!==undefined?`parent ${o.parent||'core'}  mirror ${o.mirror??'—'}<br>`:'')+
-    `<span style="color:${o.blend}">■</span> ${o.blend}`;
-  draw();
+  if(drag){
+    if(Math.abs(mx-drag.mx)+Math.abs(my-drag.my)>2)drag.moved=true;
+    pan.x=drag.px+mx-drag.mx;pan.y=drag.py+my-drag.my;draw();return;}
+  if(!SC||pinned)return;                    // a pin owns the selection
+  setStack(pickStack(mx,my));
 });
-cv.addEventListener('mouseleave',()=>{hover=null;ui('hud').className='empty';draw()});
+cv.addEventListener('mouseleave',()=>{if(!pinned)setStack([])});
 cv.addEventListener('mousedown',e=>{const r=cv.getBoundingClientRect();
-  drag={mx:e.clientX-r.left,my:e.clientY-r.top,px:pan.x,py:pan.y}});
-addEventListener('mouseup',()=>drag=null);
+  drag={mx:e.clientX-r.left,my:e.clientY-r.top,px:pan.x,py:pan.y,moved:false}});
+// A press that did not pan is a click. Pin the stack under it, so the mouse is
+// free to leave -- clicking clear space, or esc, hands the hover back.
+addEventListener('mouseup',()=>{
+  const d=drag;drag=null;
+  if(!d||d.moved||!SC)return;
+  const st=pickStack(d.mx,d.my);
+  pinned=st.length>0;setStack(st);
+});
+// The stack list is only live while pinned, which is what keeps it from
+// becoming a dead patch the hover cannot see through.
+ui('hud').addEventListener('mousedown',e=>e.stopPropagation());
+ui('hud').addEventListener('click',e=>{
+  const row=e.target.closest('[data-n]');if(!row||!pinned)return;
+  si=+row.dataset.n;cur=stack[si];hud();draw();
+});
 cv.addEventListener('wheel',e=>{e.preventDefault();
   const zi=ui('zoom');zi.value=Math.max(1,Math.min(16,+zi.value-Math.sign(e.deltaY)*0.5));
   draw();},{passive:false});
-for(const id of ['zoom','bridge','mounts','ids','axes'])ui(id).addEventListener('input',draw);
+for(const id of ['zoom','bridge','mounts','ids','axes','peel'])
+  ui(id).addEventListener('input',draw);
 
 // -- switching ------------------------------------------------------------
 // Zoom, pan and the toggles deliberately survive a switch: flipping between two
@@ -613,6 +777,10 @@ addEventListener('keydown',e=>{
   if(e.key==='[')cycle(-1);
   else if(e.key===']')cycle(1);
   else if(e.key==='0')centre();
+  else if(e.key==='ArrowDown'){e.preventDefault();step(1);}
+  else if(e.key==='ArrowUp'){e.preventDefault();step(-1);}
+  else if(e.key==='Escape'){pinned=false;setStack([]);}
+  else if(e.key==='p'){ui('peel').checked=!ui('peel').checked;draw();}
 });
 
 async function poll(){
