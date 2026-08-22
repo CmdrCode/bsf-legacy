@@ -233,6 +233,13 @@ def tree_rev(*, fresh: bool = False) -> str:
     A digest of the whole tree rather than of one hull's sprites, because the
     interesting event is a file that is not there yet -- there is nothing to
     watch until it appears. 565 files measures 1.5 ms warm.
+
+    `mods/` is an art root too -- `_find_stem` looks there before the stock
+    folders -- but only its top-level `.png`/`.gif` are folded in, which is
+    exactly the set `_find_stem` can resolve from it. The rest of that
+    directory is the mods' own runtime state, and `probe.txt` alone is
+    rewritten three times a second: walking it would move the digest on
+    essentially every poll, which is the opposite of what it is for.
     """
     global _TREE
     now = time.monotonic()
@@ -252,6 +259,13 @@ def tree_rev(*, fresh: bool = False) -> str:
                     continue
                 h.update(f'{os.path.relpath(fp, root)}\0{st.st_mtime_ns}\0'
                          f'{st.st_size}\0'.encode())
+    if MOD_ART.is_dir():
+        for fp in sorted(list(MOD_ART.glob('*.png')) + list(MOD_ART.glob('*.gif'))):
+            try:
+                st = fp.stat()
+            except OSError:                          # vanished mid-walk: it is a change
+                continue
+            h.update(f'{fp.name}\0{st.st_mtime_ns}\0{st.st_size}\0'.encode())
     _TREE = (now, h.hexdigest()[:12])
     return _TREE[1]
 

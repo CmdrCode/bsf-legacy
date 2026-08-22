@@ -275,9 +275,9 @@ follows `bsf-capture`'s posture rather than `bsf-storytelling`'s.
    then read the PNG. The preview from step 0 is the interactive view — it
    watches the files and repaints whoever wrote them, CLI or ShipMaker, and
    **that includes the sprites**: art added, edited or deleted under
-   `Custom sprites/` reaches the open page within a poll, so a section can name
-   a sprite that does not exist yet and you can draw it into place without
-   restarting anything. Bare,
+   `Custom sprites/` — or top-level `mods/*.png`, the mod-art root — reaches the
+   open page within a poll, so a section can name a sprite that does not exist
+   yet and you can draw it into place without restarting anything. Bare,
    it watches `mods/ships` and the game's `Custom Ships` and puts them all in
    one dropdown; name a file to have it shown first, a directory to watch that
    instead. The URL carries the hull, `[`/`]` cycle, `0` re-centres, and zoom
@@ -420,6 +420,11 @@ CLI: add the object to `sprites.MODULES` (or `ship check` calls it `unloadable`
 and `ship export` refuses), and add its true origin to `sprites.MOD_ORIGIN` —
 `barrel_pivot()` gets a symmetric plate within half a pixel, which is close
 enough to look right and wrong enough that the preview and the game disagree.
+Re-running the generator repaints the open preview like any other sprite edit:
+`tree_rev` folds in `mods/*.png` at the top level only, which is exactly what
+`_find_stem` resolves there, and leaves the mods' own runtime state out — the
+probe rewrites `mods/probe.txt` three times a second, and a digest that walked
+it would move on every poll.
 
 **Chain it from `mods/init.gml`** — one row in the table there, and mind the
 ordering comments.
