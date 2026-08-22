@@ -73,6 +73,14 @@ mods/*.req
 !mods/logo.on
 !mods/legacy.on
 
+# ...and except mount art this repo authored. `mods/*.png` above is for runtime
+# output (mods/shot.png), which is why the rule is there; spr_UmbraCloak.png is
+# source. It is drawn by tools/mkmodart.py rather than by hand, and both halves
+# are tracked for the same reason mods/ships keeps the .sb4 AND the .shp: the
+# generator is what lets the design change, the file is what the installer
+# copies into the player's game.
+!mods/spr_*.png
+
 # Build + scratch
 tmp/
 build/

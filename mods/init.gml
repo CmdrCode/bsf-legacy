@@ -165,10 +165,11 @@ nm[12]='guidump';    mk[12]='guidump.on';   // menu inventory, diagnostics only
 nm[13]='logo';       mk[13]='logo.on';      // MUST precede legacy: CLEARS GUI_MainTitle's Draw
 nm[14]='legacy';     mk[14]='legacy.on';    // appends one Draw to GUI_MainTitle
 nm[15]='crisp';      mk[15]='crisp.on';     // menu label sprites -> drawn text
-nm[16]='act2';       mk[16]='!act2.off';    // Act II campaign: paged career menu + episodes (chains act2m1.gml)
-nm[17]='editor';     mk[17]='editor.on';    // MUST follow act2: mission-editor channel, drives its rooms
-nm[18]='roomtest';   mk[18]='';             // LAST: probes for functions that may not exist, and a
-last = 18;                                  // missing one silently aborts the rest of the file it is in
+nm[16]='umbracloak'; mk[16]='!umbracloak.off';// new module type: the Umbra Cloak + its sprite
+nm[17]='act2';       mk[17]='!act2.off';    // Act II campaign: paged career menu + episodes (chains act2m1.gml)
+nm[18]='editor';     mk[18]='editor.on';    // MUST follow act2: mission-editor channel, drives its rooms
+nm[19]='roomtest';   mk[19]='';             // LAST: probes for functions that may not exist, and a
+last = 19;                                  // missing one silently aborts the rest of the file it is in
 
 for (k = 0; k <= last; k += 1) {
     if (mk[k] == '')

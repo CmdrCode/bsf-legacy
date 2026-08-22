@@ -78,9 +78,31 @@ follows `bsf-capture`'s posture rather than `bsf-storytelling`'s.
 16. **Turret sprites have off-centre origins, and their barrels point +x.** A
     turret on the −x flank aims into the hull unless rotated 180°, and rotating
     it swings the body several pixels off its mount — re-seat afterwards.
+16a. **A positive `--angle` lifts the +x end.** y is down, `image_angle` is
+    counter-clockwise, and the two compose so that `--angle 17` puts the part's
+    right-hand end *higher* on screen, not lower. Both stock swept plates —
+    `BSF_Stock02` and `BSF_Stock03` — fall 17 rows over 56 columns going right,
+    so trimming either one takes `--angle 17`, and the first attempt used −17
+    and laid every blade across its edge instead of along it. Measure the plate,
+    then check the *rendered extent* rather than the intent: a rotated part's
+    bbox is much taller than its art, and `--at` has to be tuned against the
+    number, not the picture.
+16b. **Space depths by four; `--mirror` takes depth+1.** Packed values collide
+    the moment a part is mirrored, and a collision is not cosmetic — ShipMaker
+    silently drops a section that shares a depth with another, and
+    `ship export` warns about exactly that. Lower depth draws on top.
 
 ### Judgement
 
+16c. **A graft goes underneath.** Laying new plate *over* a recognisable hull at
+    low depth covers the panel lines that make it recognisable, and what comes
+    back is a different ship wearing the old outline. Buried plate is the BSF
+    idiom anyway (D3): put the addition behind at depth 12+ and let it show as
+    fringe along an edge, or in a gap the host hull already leaves open. On the
+    Hestia that gap is real and useful — the two `BSF_Stock03` prongs cover
+    y[−28,−9] and y[+9,+28], so there is an open channel down the middle of its
+    own delta from the core to the points, and a part seated there is fully
+    visible without touching the silhouette.
 17. **Look for the game's own answer before inventing one.** `PointMaser` is
     the point-defence weapon because `Flak_Platform` *is* one section and one
     PointMaser; every stock station carries a `NanoMatrix`. `stockship.py` reads
@@ -183,9 +205,16 @@ follows `bsf-capture`'s posture rather than `bsf-storytelling`'s.
 
 ### The two things that are not in git
 
-20. **The `.sb4` is source; the game loads the `.shp`.** Sections there are
-    `nSec2a` records this model does not build, so *no* `.sb4` edit reaches the
-    game without a ShipMaker re-export. Say so whenever handing work over.
+20. **The `.sb4` is source; the game loads the `.shp`.** `ship export` builds
+    the whole `.shp` — `export._section` writes all six records a section
+    becomes, `nSec2a` included — so a `.sb4` edit *does* reach the game, once
+    exported. (An earlier version of this rule said the model could not build
+    `nSec2a` and that only ShipMaker could re-export. That was true before
+    `export.py` and is not true now; rule 21's "export before you commit" is
+    the live instruction.) What still needs ShipMaker is **editing** a hull in
+    ShipMaker: a part it has no entry for — `mods/umbracloak.gml`'s module, for
+    one — is CLI-only, because ShipMaker reads its own catalogue and not the
+    game's objects. Say *that* when handing work over.
 21. **`mods/ships/` is the exception to the gitignore, and both halves are
     tracked.** `*.sb4` and `*.shp` are ignored everywhere else, then
     re-included by name for this one directory — the `.sb4` because it is the
@@ -300,14 +329,17 @@ repo in the cache, so nothing is lost by trying something.
 An edit is finished when all of these hold:
 
 - `python3 tools/bsf/roundtrip.py` still reports **every file byte-exact** —
-  the total is whatever the install holds (181/181 as of 2026-08-16), so read
+  the total is whatever the install holds (183/183 as of 2026-08-21), so read
   the failure count, not the total. A count is not a verdict.
-- `python3 tools/bsf/selftest.py` gains no failures. It is not at zero: the
-  pre-existing `doodad sprite resolves -- ['ThrusterEx']` has been failing
-  independently of any edit, so compare against a run on a clean tree rather
-  than against zero.
-  (Both read stock ships from the game install, so they need one — the corpus
-  they walk is not in this repo.)
+- `python3 tools/bsf/selftest.py` gains no failures. **It is at zero as of
+  2026-08-21** — 139 passed, 0 failed. The long-standing `doodad sprite
+  resolves -- ['ThrusterEx']` failure was never an edit's fault and is not a
+  quirk to live with either: `ThrusterEx` is exe-only art, and
+  `python3 tools/bsf/exeart.py` writes it into `tools/bsf/.cache/exeart`, after
+  which it resolves. Run that once on a fresh checkout; the same command is
+  what makes core shapes 1–6 render as themselves instead of as frame 0.
+  (Both gates read stock ships from the game install, so they need one — the
+  corpus they walk is not in this repo.)
 - `ship check` reports nothing new against the baseline — and in particular
   **no `floating`**, which is never acceptable and never baseline-able.
 - The render has been *looked at*, not just produced.
@@ -315,6 +347,58 @@ An edit is finished when all of these hold:
   findings that were not there before.
 - If a `.shp` exists beside the `.sb4`, the handover says plainly that the game
   still loads the old one until someone re-exports from ShipMaker.
+
+## Adding a part the game does not have
+
+Done once, for the Umbra Cloak (2026-08-21) — `mods/umbracloak.gml`,
+`mods/spr_UmbraCloak.png`, `tools/mkmodart.py`. Everything below is read off the
+decrypted object tree rather than guessed, and **none of it is verified in a
+running game yet** (D19a). Reach for it only when no stock object will do; check
+`sprites.MODULES` and `ship parts list` first.
+
+**A new module is one `object_add()` parented to `ctr_Turrets`.** That object is
+where the whole mount apparatus lives — owner, hp, energy fields, positioning,
+triggers, death — and every stock weapon *and* module is a direct child of it:
+`Deflector`[228], `NanoMatrix`[227], `Booster`[369], `Impeder`[593],
+`Blaster`[91]. `tools/gmobj.py` prints the tree; call **`walk_section()`**, not
+`main()`, or the list positions are not object indices and every parent lookup
+lands on the wrong object.
+
+**Shadow the Step, inherit the Create.** `ctr_Turrets`' Step is the weapon
+firing logic and a module must not run it — `NanoMatrix` is the pattern, and it
+defines its own Step with no `event_inherited()`. That is the one place the
+modding guide's rule 2 ("a created event shadows the parent's") is the behaviour
+you want. The Create is the opposite: call `event_inherited()` first, then set
+`module = 1` and the stats. Energy regen is **per-module**, not in the base —
+`Deflector` regenerates in its own Draw — so a new one does its own or never
+recharges. The base Draw is inherited untouched and draws `sprite_index` at
+`image_alpha`.
+
+**Getting the name in scope is the part that is not obvious.** A `.shp` is
+compiled: `nTur2,x,y,UmbraCloak,…` is rebuilt as `nTur2(x,y,UmbraCloak,…)` and
+installed as the hull's Create, so the object name is evaluated as a GML
+expression in the *ship instance's* scope — and a runtime-created object has no
+resource name to resolve against. It works because every hull's Create opens
+with `event_inherited()`, so appending `UmbraCloak = global.…;` to `ctr_Ship`'s
+Create runs before the hull's own code resumes. That append is rule-1 safe:
+`ctr_Ship`[1] and `ctr_EShip`[56] both already carry a `0:0`. Do **not** try to
+smuggle `global.X` through the record instead — `export._ident` strips the dot
+on purpose, because a mount name is a code-injection surface.
+
+**The art.** Mount art comes from the object, never from a path, so a custom
+PNG can be a section sprite but not a mount sprite without an object. Draw it
+from code (`tools/mkmodart.py`) into `mods/`, which the installer copies into
+the game whole. Two things it must get right: the stock grammar (10–17px, 1px
+white rim over mid-grey) and the key — GM's loader passes `transparent=1` and
+keys on the **bottom-left pixel**, so fill the background with the stock turret
+key `(0,128,64)`; an alpha channel loads as an opaque rectangle. Then teach the
+CLI: add the object to `sprites.MODULES` (or `ship check` calls it `unloadable`
+and `ship export` refuses), and add its true origin to `sprites.MOD_ORIGIN` —
+`barrel_pivot()` gets a symmetric plate within half a pixel, which is close
+enough to look right and wrong enough that the preview and the game disagree.
+
+**Chain it from `mods/init.gml`** — one row in the table there, and mind the
+ordering comments.
 
 ## Choosing parts
 

@@ -47,12 +47,32 @@ FOLDERS = ('Stock Weapons', 'Stock Misc', 'Doodads', 'Stock Sections', 'Sections
 #: Weapon objects that draw an extra additive pass at 1.5x scale in `$FF2222` --
 #: a GM literal, so BGR: rgb(34,34,255), a *blue* glow. It is what makes
 #: deflectors and boosters read as glowing beads.
+#:
+#: `UmbraCloak` is the one entry the shipped game does not have: it is a module
+#: type `mods/umbracloak.gml` builds at load, parented to `ctr_Turrets` like
+#: every stock module. It belongs in this set for the reason the set exists --
+#: the loader reads `l_bullet` off every *weapon* mount, and a module has none,
+#: so filing it as a weapon would cost the whole ship (D19c).
 MODULES = {
     'Deflector', 'AegisDeflector', 'NanoMatrix', 'Booster', 'Thruster',
     'Impeder', 'ImpederDeployer', 'GluonBolter', 'Lancet', 'Teller', 'Gosling',
     'Frosch', 'Gravbeam', 'DemeterPod', 'PlatformDeployer', 'Dieterling',
     'Rorschach', 'ProjectorSol', 'ShipDeployer',
+    'UmbraCloak',
 }
+
+#: Mount art this repo provides rather than the install. The game reaches it the
+#: same way -- `mods/` is copied into the game directory whole, and the module
+#: that needs it calls `sprite_add` on the copy -- so searching here first is
+#: what makes the CLI draw what the game will draw.
+MOD_ART = paths.REPO / 'mods'
+
+#: ...and for the same reason the exe cache overrides `barrel_pivot()`, so does
+#: this: the origin of a sprite this repo authored is not a thing to infer, it is
+#: the argument `mods/umbracloak.gml` passes to `sprite_add`. The heuristic gets
+#: this one within half a pixel, which is close enough to look right and wrong
+#: enough that the preview and the game would not agree.
+MOD_ORIGIN = {'spr_UmbraCloak': (7, 7)}
 MODULE_GLOW = (34, 34, 255)
 
 #: The sentinel every `nMod2` stat is tested against: `if argument4 != -1 then
@@ -185,6 +205,10 @@ def gm_colour(value: float) -> tuple[int, int, int]:
 # --------------------------------------------------------------------------
 
 def _find_stem(stem: str) -> pathlib.Path | None:
+    for ext in ('.png', '.gif'):
+        p = MOD_ART / (stem + ext)
+        if p.exists():
+            return p
     for folder in FOLDERS:
         for ext in ('.png', '.gif'):
             p = SPRITES / folder / (stem + ext)
@@ -298,6 +322,9 @@ def load(path_str: str, mask: bool, pivot: bool = False) -> Sprite:
         rgba[..., 3] = vis * 255
         out.append(rgba)
     h, w = out[0].shape[:2]
+    known = MOD_ORIGIN.get(path.stem) if path.parent == MOD_ART else None
+    if known is not None:
+        return Sprite(out, known[0], known[1], mask, path)
     ox = barrel_pivot(first_vis) if pivot else w / 2
     return Sprite(out, ox, h / 2, mask, path)
 
