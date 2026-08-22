@@ -181,6 +181,32 @@ all reusable:
 * **Review in Chrome**: plain `python3 -m http.server` cannot serve video
   (Chrome requires Range/206); use `scripts/serve_range.py PORT DIR`.
 
+## Staging traps — 2026-08-22
+
+Found while verifying a new mod headlessly rather than capturing.
+
+* **Clear `mods/` in the staged copy, and install the DLLs from the repo build.**
+  A `cp -a` of the game dir brings across whatever the last session left there —
+  including a `bsfshader.dll` that is a *different build* from the one
+  `tools/build.sh` produces now (same size, different hash, measured). A stale
+  DLL changes `external_define` behaviour and the run then measures the wrong
+  binary under the new name. Same class as the "fail loudly if the variant exe
+  is missing" rule below.
+* **`tools/game.py --help` is not a help flag.** `game.py` treats its argument as
+  a command, so that invocation attempts a *launch* against the canonical
+  install on the inherited `DISPLAY`. Read the file for the verbs rather than
+  probing for them.
+* **A verification run wants no capture at all.** For "does this mod load, and
+  what does it throw", the whole loop is: stage → `probe.on` → launch on Xvfb →
+  read `mods/probe.txt`, the module's own breadcrumb, and `game_errors.log`.
+  Count error *blocks* against a baseline run with the module gated off — an
+  absolute count means nothing, because BSF's own BASS audio defines fail ~40
+  times on any box with no sound device.
+* **Give a new module a breadcrumb file.** `execute_file` on a file that will not
+  compile does nothing, silently, so "no breadcrumb" and "breadcrumb says
+  `start` but not `ok`" are the two diagnoses you otherwise cannot tell apart.
+  `battle.gml` and `cloak.gml` both do this.
+
 ## Archive convention
 
 Every finished video lands in `_local/captures/` with its driver script beside
